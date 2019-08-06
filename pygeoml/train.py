@@ -54,7 +54,7 @@ class Trainingdata():
         return Trainingdata(X,y)
 
     @classmethod
-    def calc_xy(cls, path_to_raster, write=False, *gdfs):
+    def calc_xy(cls, path_to_raster, list_gdfs, write=False):
         """
         Build the X feature matrix by extracting the pixel values from the raster
         at the point location.
@@ -69,7 +69,7 @@ class Trainingdata():
 
         """
         # Create a (geometry, classname, id) geodf of all classes geodf
-        shapefiles = gpd.GeoDataFrame(pd.concat([*gdfs],ignore_index=True, sort=False))
+        shapefiles = gpd.GeoDataFrame(pd.concat(list_gdfs,ignore_index=True, sort=False))
 
         # Numpy array of shapely objects
         geoms = shapefiles.geometry.values
