@@ -5,6 +5,7 @@ import rasterio
 import rasterio.plot
 from rasterio.mask import mask
 from rasterio.merge import merge
+from rasterio.windows import Window
 import numpy as np
 
 from shapely.geometry import mapping
@@ -49,6 +50,9 @@ class Rasterobj():
 
         if self.driver == 'GTiff':
             print("Found {} driver. Start band -> wl mapping...".format(self.driver))
+
+    def __str__(self):
+        return "Raster(height: {}, width: {}, bands: {})".format(self.height, self.width, self.num_band)
 
     @staticmethod
     def _get_idx_band_at_wl(mapping, wl):
@@ -123,3 +127,11 @@ class Rasterobj():
         else:
             raise ValueError("Red and Nir band values are not correct. Try to call first 'get_red_and_nir_bands()' method.")
 
+    def to_numpy(self, width, height, col_off=0,row_off=0):
+        """
+        Load the raster as numpy array
+        """
+
+        with rasterio.open(self.path_to_raster) as dataset:
+            img = dataset.read(window=Window(col_off, row_off, width, height))
+        return img
