@@ -11,7 +11,7 @@ import numpy as np
 from shapely.geometry import mapping
 
 
-class Trainingdata():
+class Trainingdata:
     """
     To Manipulate or generate
     X features

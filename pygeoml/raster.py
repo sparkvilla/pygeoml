@@ -1,5 +1,7 @@
 import os
 import copy
+import glob
+import re
 
 import rasterio
 import rasterio.plot
@@ -10,6 +12,115 @@ import numpy as np
 
 from shapely.geometry import mapping
 
+
+class Raster:
+    """
+    Base raster class to process geo data.
+    """
+
+    def __init__(self, path_to_raster, outdir=None):
+
+        self.path_to_raster = path_to_raster
+        self.outdir = outdir
+
+        with rasterio.open(path_to_raster) as dataset:
+            self.driver = dataset.driver
+            self.count = dataset.count
+            self.desc = dataset.descriptions
+            self.crs = dataset.crs
+            self.meta = dataset.meta
+            self.height = dataset.height
+            self.width = dataset.width
+            self.transform = dataset.transform
+            self.bounds = dataset.bounds
+
+    def __str__(self):
+        return "Raster(height: {}, width: {}, bands: {})".format(self.height, self.width, self.count)
+
+    def __repr__(self):
+        return 'Rastermps({})'.format(self.path_to_raster)
+
+    def load_band(self, band=1):
+        "Load a band as numpy array"
+        with rasterio.open(self.path_to_raster) as dataset:
+            return dataset.read(band)
+
+    def load_window(self, width, height, col_off=0,row_off=0):
+        """
+        Load raster window as numpy array
+        """
+        with rasterio.open(self.path_to_raster) as dataset:
+            img = dataset.read(window=Window(col_off, row_off, width, height))
+        return img
+
+
+    def write_tiles(self, tile_size_x=50, tile_size_y=70):
+
+        with rasterio.open(self.path_to_raster) as dataset:
+            for col in range(0, self.width, tile_size_x):
+                for row in range(0, self.height, tile_size_y):
+                    #print(row,col)
+                    tile = dataset.read(window=Window(col, row, tile_size_x, tile_size_y))
+                    yield tile.shape
+
+
+    def get_ndvi_band(self, arr_red, arr_nir, write=False):
+        """
+        It calculates the ndvi using the red and nir bands.
+        It returns ndvi numpy array.
+
+        When write=True the ndvi is saved to disk as ndvi.gtif
+
+        """
+        if (isinstance(arr_red,np.ndarray) & isinstance(arr_nir,np.ndarray)):
+            np.seterr(divide='ignore', invalid='ignore')
+            ndvi_arr = (arr_nir.astype(float)-arr_red.astype(float))/(arr_nir.astype(float)+arr_red.astype(float))
+
+            # write to disk
+            if write:
+                ndvi_meta = copy.deepcopy(self.meta)
+                ndvi_meta.update(count=1, dtype="float64", driver='GTiff')
+                ndvi_path = os.path.dirname(self.path_to_raster)
+                if self.outdir:
+                    ndvi_path = self.outdir
+                with rasterio.open(os.path.join(ndvi_path,'ndvi.gtif'), 'w', **ndvi_meta) as dst:
+                            dst.write(ndvi_arr, 1)
+        else:
+            raise ValueError("Red and Nir band values are not correct. Try to call first 'get_red_and_nir_bands()' method.")
+        return ndvi_arr
+
+class Rastermsp(Raster):
+
+    def __init__(self, path_to_raster):
+        super().__init__(path_to_raster)
+        assert self.count > 1, '"Rastermsp" class process multibands raster only, your raster has a single band. Try to use the "Raster" class instead.'
+
+    @classmethod
+    def merge_to_single_raster(cls, dirpath, parser):
+
+        parse = parser(dirpath)
+
+        #filepath for image we're writing out
+        img_fp = os.path.join(dirpath, parse.fname)
+
+        # get raster files and tags
+        srfiles = [ i[0] for i in parse.srfiles]
+        srfiles_tags = [ i[1] for i in parse.srfiles]
+        # Read metadata of first file and assume all other bands are the same
+        with rasterio.open(srfiles[0]) as src0:
+                meta = src0.meta
+        # Update metadata to reflect the number of layers
+        meta.update(count = len(srfiles))
+        # Read each layer and write it to stack
+        with rasterio.open(img_fp, 'w', **meta) as dst:
+            # Update description for the stack
+            dst.descriptions = srfiles_tags
+            for _id, layer in enumerate(srfiles, start=1):
+                with rasterio.open(layer) as src1:
+                    dst.write_band(_id, src1.read(1))
+        return Rastermsp(img_fp)
+
+# to be change with Rasterhsp()
 class Rasterobj():
 
     RED = 672
@@ -46,13 +157,13 @@ class Rasterobj():
                 # key = l[6].split(":")[0]
                 val = round(float(l[-2]), 3)
                 self.band_wl[key] = val
-            self.wl = self.band_wl.values()
+            self.wl = list(self.band_wl.values())
 
         if self.driver == 'GTiff':
             print("Found {} driver. Start band -> wl mapping...".format(self.driver))
 
     def __str__(self):
-        return "Raster(height: {}, width: {}, bands: {})".format(self.height, self.width, self.num_band)
+        return "Raster(height: {}, width: {}, bands: {})".format(self.height, self.width, self.num_bands)
 
     @staticmethod
     def _get_idx_band_at_wl(mapping, wl):
@@ -127,7 +238,7 @@ class Rasterobj():
         else:
             raise ValueError("Red and Nir band values are not correct. Try to call first 'get_red_and_nir_bands()' method.")
 
-    def to_numpy(self, width, height, col_off=0,row_off=0):
+    def get_raster_window(self, width, height, col_off=0,row_off=0):
         """
         Load the raster as numpy array
         """
@@ -135,3 +246,13 @@ class Rasterobj():
         with rasterio.open(self.path_to_raster) as dataset:
             img = dataset.read(window=Window(col_off, row_off, width, height))
         return img
+
+
+    def get_raster_tiles(self, tile_size_x=50, tile_size_y=70):
+
+        with rasterio.open(self.path_to_raster) as dataset:
+            for col in range(0, self.width, tile_size_x):
+                for row in range(0, self.height, tile_size_y):
+                    #print(row,col)
+                    tile = dataset.read(window=Window(col, row, tile_size_x, tile_size_y))
+                    yield tile.shape

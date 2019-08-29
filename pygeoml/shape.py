@@ -1,9 +1,5 @@
 import os
-import copy
-
 import geopandas as gpd
-import pandas as pd
-import numpy as np
 
 class Shapeobj():
     """
@@ -53,5 +49,3 @@ class Shapeobj():
     def reproject(self, ref):
         # This will change gdf in place
         self.gdf = self.gdf.to_crs({'init':ref})
-
-
