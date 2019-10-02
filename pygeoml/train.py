@@ -26,17 +26,17 @@ class Trainingdata:
         np.save(os.path.join(outdir,rname+'_features.npy'),self.X)
         np.save(os.path.join(outdir,rname+'_lables.npy'),self.y)
 
-    def add_background_xy(self, n=80):
+    def add_class_xy(self, class_name, class_value, n=80):
         """
-        Extend X,y in the 0 dimension by adding a n numbers of
-        zeros to X and a n numbers of "background" label to y..
+        Extend X,y in the 0 dimension by adding a n number of
+        class_value to X and a n numbers of class_name label to y.
 
         n is a number of objects to stack to X and y
         """
-        bkg_val = np.zeros((n, self.X.shape[1]))
-        bkg_label = np.array(['background' for _ in range(n)])
-        self.X = np.vstack((self.X,bkg_val))
-        self.y = np.append(self.y,bkg_label)
+        class_val = np.ones((n, self.X.shape[1]))*class_value
+        class_label = np.array([class_name for _ in range(n)])
+        self.X = np.vstack((self.X,class_val))
+        self.y = np.append(self.y,class_label)
 
     def hstack_to_x(self, other):
         # check x for equal 0 dimension
@@ -87,12 +87,12 @@ class Trainingdata:
                 # out_image.shape == (band_count,1,1) for one Point Object
                 out_image, out_transform = mask(src, feature, crop=True)
                 # eliminate all the pixels with 0 values for all 8 bands - AKA not actually part of the shapefile
-                out_image_trimmed = out_image[:,~np.all(out_image == 0, axis=0)]
+                #out_image_trimmed = out_image[:,~np.all(out_image == 0, axis=0)]
                 # eliminate all the pixels with 255 values for all 8 bands - AKA not actually part of the shapefile
-                out_image_trimmed = out_image_trimmed[:,~np.all(out_image_trimmed == 255, axis=0)]
+                #out_image_trimmed = out_image_trimmed[:,~np.all(out_image_trimmed == 255, axis=0)]
 
                 # reshape the array to [pixel values, band_count]
-                out_image_reshaped = out_image_trimmed.reshape(-1, src.count)
+                out_image_reshaped = out_image.reshape(-1, src.count)
 
                 y = np.append(y,[shapefiles["classname"][index]] * out_image_reshaped.shape[0])
                 X = np.vstack((X,out_image_reshaped))
