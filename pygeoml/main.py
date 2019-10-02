@@ -1,7 +1,9 @@
+import matplotlib.pyplot as plt
 import os
 import glob
 import copy
 
+from rasterio.plot import reshape_as_image
 from raster import Raster, Rastermsp
 from parser import Sentinel2
 from shape import Shapeobj
@@ -41,10 +43,38 @@ def wf1():
 
 if __name__ == "__main__":
 
-    basedir = '/home/diego/work/dev/ess_diego/'
+    basedir = '/home/diego/work/dev/ess_diego/Data_Diego'
 
-    imgdir = os.path.join(basedir,'Data_Diego/Sentinel/Sentinel_2017/S2B_MSIL1C_20171018T072859_N0205_R049_T37MBN_20171018T074738.SAFE/GRANULE/L1C_T37MBN_A003221_20171018T074738/IMG_DATA/')
-    #r = Raster(os.path.join(imgdir,'T37MBN_20170718T075211_B02.jp2'))
-    #r = Rastermsp.merge_to_single_raster(imgdir,Sentinel2)
-    r = Rastermsp.merge_to_single_raster(imgdir,Sentinel2)
-    print(r.desc)
+
+    #Get data with 10m resolution
+    imgdir = os.path.join(basedir,
+            'S2B_MSIL2A_20190812T073619_N9999_R092_T37MBN_20190919T144441.SAFE/GRANULE/L2A_T37MBN_A012702_20190812T075555/IMG_DATA/R10m/')
+
+
+    #stack = Rastermsp.create_stack(os.path.join(basedir,imgdir),Sentinel2)
+
+    green_path = os.path.join(imgdir, 'T37MBN_20190812T073619_B03_10m.jp2')
+    blue_path = os.path.join(imgdir, 'T37MBN_20190812T073619_B02_10m.jp2')
+    red_path = os.path.join(imgdir, 'T37MBN_20190812T073619_B04_10m.jp2')
+    nir_path = os.path.join(imgdir, 'T37MBN_20190812T073619_B08_10m.jp2')
+    red = Raster(red_path)
+    blue = Raster(blue_path)
+    green = Raster(green_path)
+    nir = Raster(nir_path)
+
+    ndvi = Raster.load_ndvi(red, nir, width=red.width, height=red.height, write=True)
+    #rgb = Raster.load_rgb(red,green,blue,height=500,width=500,col_off=0,row_off=0)
+    #stack_filepath = os.path.join(imgdir,'Sentinel2_20190812_.tif')
+    #stack = Rastermsp(stack_filepath)
+    #ndvi = r_ndvi.load_window(width=500, height=500, col_off=8000,row_off=10000)
+    #grass = r_ndvi.get_pixel_value(56+10000,398+8000)
+    #cloud = r_ndvi.get_pixel_value(10+10000,485+8000)
+    #sand = r_ndvi.get_pixel_value(56+10000,419+8000)
+    #print("Green: {}".format(grass))
+    #print("Sand: {}".format(sand))
+    #print("Cloud: {}".format(cloud))
+    #rgb = stack.load_rgb(height=500,width=500,col_off=0,row_off=0)
+    #plt.imshow(rgb)
+    #fig, ax = plt.subplots(figsize=(10, 10))
+    #ax.imshow(rgb)
+    #plt.show()
