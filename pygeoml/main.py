@@ -47,34 +47,23 @@ if __name__ == "__main__":
 
 
     #Get data with 10m resolution
-    imgdir = os.path.join(basedir,
+    datadir = os.path.join(basedir,
             'S2B_MSIL2A_20190812T073619_N9999_R092_T37MBN_20190919T144441.SAFE/GRANULE/L2A_T37MBN_A012702_20190812T075555/IMG_DATA/R10m/')
+    shpdir = os.path.join(datadir,'field_points')
+    fpath_r = os.path.join(datadir,'multibands_20190812.gtif')
+    fpath_ndvi = os.path.join(datadir,'ndvi.gtif')
+    fpath_red = os.path.join(datadir,'T37MBN_20190812T073619_B04_10m.jp2')
+    fpath_shape = os.path.join(shpdir,'field_points.shp')
+    # Instanciate stack, red, ndvi and shape objects
+    r = Rastermsp(fpath_r)
+    r_ndvi = Raster(fpath_ndvi)
+    r_red = Raster(fpath_red)
+    shapes = Shapeobj(fpath_shape)
+    red_arr = r_red.load_as_arr()
 
+    # load a new gdf that excludes points outside the raster polygon boundaries
+    new_gdf = r_red.get_gdf_within(shapes.gdf)
 
-    #stack = Rastermsp.create_stack(os.path.join(basedir,imgdir),Sentinel2)
+    Raster.points_on_layer_plot(r_red, red_arr, new_gdf, s_markersize=7)
 
-    green_path = os.path.join(imgdir, 'T37MBN_20190812T073619_B03_10m.jp2')
-    blue_path = os.path.join(imgdir, 'T37MBN_20190812T073619_B02_10m.jp2')
-    red_path = os.path.join(imgdir, 'T37MBN_20190812T073619_B04_10m.jp2')
-    nir_path = os.path.join(imgdir, 'T37MBN_20190812T073619_B08_10m.jp2')
-    red = Raster(red_path)
-    blue = Raster(blue_path)
-    green = Raster(green_path)
-    nir = Raster(nir_path)
-
-    ndvi = Raster.load_ndvi(red, nir, width=red.width, height=red.height, write=True)
-    #rgb = Raster.load_rgb(red,green,blue,height=500,width=500,col_off=0,row_off=0)
-    #stack_filepath = os.path.join(imgdir,'Sentinel2_20190812_.tif')
-    #stack = Rastermsp(stack_filepath)
-    #ndvi = r_ndvi.load_window(width=500, height=500, col_off=8000,row_off=10000)
-    #grass = r_ndvi.get_pixel_value(56+10000,398+8000)
-    #cloud = r_ndvi.get_pixel_value(10+10000,485+8000)
-    #sand = r_ndvi.get_pixel_value(56+10000,419+8000)
-    #print("Green: {}".format(grass))
-    #print("Sand: {}".format(sand))
-    #print("Cloud: {}".format(cloud))
-    #rgb = stack.load_rgb(height=500,width=500,col_off=0,row_off=0)
-    #plt.imshow(rgb)
-    #fig, ax = plt.subplots(figsize=(10, 10))
-    #ax.imshow(rgb)
-    #plt.show()
+    plt.show()
