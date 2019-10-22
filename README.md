@@ -1,2 +1,2 @@
 # pygeoml
-Spatial data manipulation and analysis 
+Spatial data processing and analysis 
