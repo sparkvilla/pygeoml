@@ -16,7 +16,7 @@ from shapely.geometry import Point, Polygon, mapping
 
 class Raster:
     """
-    Base raster class to process geo data.
+    Base raster class to process geo-referenced raster data.
     """
 
     def __init__(self, path_to_raster, outdir=None):
@@ -43,7 +43,7 @@ class Raster:
 
     def load_as_arr(self, height=None, width=None, bands=None, col_off=0, row_off=0):
         """
-        Return a raster as a 3D numpy array. The axis of the array have the order:
+        Load a raster image as a 3D numpy array. The axis of the array have the order:
 
         (height, width, bands) or
         (rows, cols, channels)
@@ -51,6 +51,16 @@ class Raster:
         This is the order expected by image processing and visualization software;
         i.e. matplotlib, scikit-image, etc..
 
+        Use 'heigh' and 'width' to load only a window of the raster.
+        If raster is a multi layer stack use 'band' to select a single or multiple bands of choice.
+        ************
+
+        params:
+            height -> height (number of rows)
+            width -> width (number of cols)
+            bands -> number of layers
+            col_off -> starting column
+            row_off -> starting row
         """
         # check whether to load the entire array
         if height is None:
@@ -69,21 +79,6 @@ class Raster:
             img = dataset.read(bands, window=Window(col_off, row_off, width, height))
         return reshape_as_image(img)
 
-    @classmethod
-    def load_rgb(cls, red_obj, green_obj, blue_obj, height, width, bands=1, col_off=0,row_off=0):
-
-        r = red_obj.load_as_arr(height, width, bands, col_off, row_off)
-        g = green_obj.load_as_arr(height, width, bands, col_off, row_off)
-        b = blue_obj.load_as_arr(height, width, bands, col_off, row_off)
-
-
-        rgb_norm = np.empty((height,width,3), dtype=np.float32)
-        rgb_norm[:,:,0] = Raster._normalize(r[:,:,0])
-        rgb_norm[:,:,1] = Raster._normalize(g[:,:,0])
-        rgb_norm[:,:,2] = Raster._normalize(b[:,:,0])
-
-        # normalized RGB natural color composite
-        return rgb_norm
 
 
     def transform_to_coordinates(self, rows, cols):
@@ -150,14 +145,78 @@ class Raster:
         gdf_within = gdf.loc[mask]
         return gdf_within
 
-    def write_tiles(self, tile_size_x=50, tile_size_y=70): # To be finished
-        with rasterio.open(self.path_to_raster) as dataset:
-            for col in range(0, self.width, tile_size_x):
-                for row in range(0, self.height, tile_size_y):
-                    #print(row,col)
-                    tile = dataset.read(window=Window(col, row, tile_size_x, tile_size_y))
-                    yield tile.shape
+#    def write_tiles(self, tile_size_x=50, tile_size_y=70): # To be finished
+#        with rasterio.open(self.path_to_raster) as dataset:
+#            for col in range(0, self.width, tile_size_x):
+#                for row in range(0, self.height, tile_size_y):
+#                    #print(row,col)
+#                    tile = dataset.read(window=Window(col, row, tile_size_x, tile_size_y))
+#                    yield tile.shape
 
+    @classmethod
+    def mask_arr(cls, arr, mask):
+        """
+        Mask an array using a mask array.
+
+        *********
+
+        params:
+            arr -> 3D numpy array (rows, cols, single channel)
+            mask -> 3D boolean masked array
+
+        """
+        return np.ma.array(arr, mask=mask)
+
+    @classmethod
+    def mask_arr_greater_equal(cls, arr, val):
+        """
+        Mask the values of an array that are greater than or equal to a given threshold.
+
+        *********
+
+        params:
+            arr -> 3D numpy array (rows, cols, single channel)
+            val -> a threshold value
+
+        """
+        return np.ma.masked_greater_equal(arr, val)
+
+    @classmethod
+    def mask_arr_less_equal(cls, arr, val):
+        """
+        Mask the values of an array that are less than or equal to a given threshold.
+
+        *********
+
+        params:
+            arr -> 3D numpy array (rows, cols, single channel)
+            val -> a threshold value
+
+        """
+        return np.ma.masked_less_equal(arr, val)
+
+    @classmethod
+    def load_rgb(cls, red_obj, green_obj, blue_obj, height, width, bands=1, col_off=0,row_off=0):
+        """
+        Calculate and load an RGB 3D numpy array.
+
+        *********
+
+        params:
+            red_obj, green_obj, blue_obj -> Instances of the Raster class
+        """
+        r = red_obj.load_as_arr(height, width, bands, col_off, row_off)
+        g = green_obj.load_as_arr(height, width, bands, col_off, row_off)
+        b = blue_obj.load_as_arr(height, width, bands, col_off, row_off)
+
+
+        rgb_norm = np.empty((height,width,3), dtype=np.float32)
+        rgb_norm[:,:,0] = Raster._normalize(r[:,:,0])
+        rgb_norm[:,:,1] = Raster._normalize(g[:,:,0])
+        rgb_norm[:,:,2] = Raster._normalize(b[:,:,0])
+
+        # normalized RGB natural color composite
+        return rgb_norm
 
     @classmethod
     def points_on_layer_plot(self, r_obj, layer_arr, gdf, **kwargs):
@@ -389,7 +448,14 @@ class Rasterhsp(Raster):
 
     def calc_ndvi(self, red_arr, nir_arr, bands=1, col_off=0, row_off=0, write=False):
         """
-        Return a calculated ndvi 3D numpy array. The axis of the array have the order:
+        Calculate ndvi and write to disk if write=True
+
+        ***********
+        params:
+            red_arr -> 3D numpy array
+            nir_arr -> 3D numpy array
+
+        The axis of the array have the order:
 
         (height, width, bands) or
         (rows, cols, channels)
@@ -397,7 +463,9 @@ class Rasterhsp(Raster):
         This is the order expected by image processing and visualization software;
         i.e. matplotlib, scikit-image, etc..
 
-        When write=True the ndvi is saved to disk as ndvi.gtif
+        ***********
+        return:
+            3D numpy array (ndvi)
 
         """
         np.seterr(divide='ignore', invalid='ignore')
@@ -415,7 +483,7 @@ class Rasterhsp(Raster):
         return ndvi_arr
 
 
-    def load_raster_profile(self, row, col):
+    def load_spectral_profile(self, row, col):
         """
         Get a one pixel window along the stack
 
