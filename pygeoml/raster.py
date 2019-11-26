@@ -12,7 +12,7 @@ from rasterio.windows import Window
 import numpy as np
 import matplotlib.pyplot as plt
 from shapely.geometry import Point, Polygon, mapping
-
+from memory_profiler import profile
 
 class Raster:
     """
@@ -43,6 +43,7 @@ class Raster:
 
     def load_as_arr(self, height=None, width=None, bands=None, col_off=0, row_off=0):
         """
+
         Load a raster image as a 3D numpy array. The axis of the array have the order:
 
         (height, width, bands) or
@@ -53,7 +54,7 @@ class Raster:
 
         Use 'heigh' and 'width' to load only a window of the raster.
         If raster is a multi layer stack use 'band' to select a single or multiple bands of choice.
-        ************
+
 
         params:
             height -> height (number of rows)
@@ -61,6 +62,7 @@ class Raster:
             bands -> number of layers
             col_off -> starting column
             row_off -> starting row
+
         """
         # check whether to load the entire array
         if height is None:
@@ -78,8 +80,6 @@ class Raster:
         with rasterio.open(self.path_to_raster) as dataset:
             img = dataset.read(bands, window=Window(col_off, row_off, width, height))
         return reshape_as_image(img)
-
-
 
     def transform_to_coordinates(self, rows, cols):
         """
@@ -99,8 +99,10 @@ class Raster:
         """
         It returns pixel values at Point coordinates contained in gdf
 
-        args:
+
+        params:
             gdf -- Geopandas dataframe. A column named 'geometry' is expected
+
         """
         gdf_copy = gdf.copy()
 
@@ -145,6 +147,35 @@ class Raster:
         gdf_within = gdf.loc[mask]
         return gdf_within
 
+    def show_layer(self, **kwargs):
+        """
+        Show a raster layer
+
+        *********
+
+        keyword args:
+            height -- raster height (default full height)
+            width -- raster width (default full width)
+            bands -- band to show (default 1)
+            coll_off -- starting column (default 0)
+            row_off -- starting row (default 0)
+            fcmap -- colormap (defaulf "pink")
+            fsize -- figure size (default 10)
+            fbar -- figure colorbar (default False)
+
+        """
+
+        height, width, band, col_off, row_off, fcmap, fsize, fbar = kwargs.get('height',self.height), kwargs.get('width',self.width),\
+                                                               kwargs.get('band', 1), kwargs.get('col_off', 0),kwargs.get('row_off', 0),\
+                                                               kwargs.get('fcmap','pink'), kwargs.get('fsize',10), kwargs.get('fbar', False)
+
+        arr = self.load_as_arr(height=height, width=width, bands=band, col_off=col_off, row_off=row_off)
+        # Plotting
+        fig, ax = plt.subplots(figsize=(fsize, fsize))
+        img = ax.imshow(arr[:,:,0], cmap=fcmap)
+        if fbar:
+            fig.colorbar(img, ax=ax)
+
 #    def write_tiles(self, tile_size_x=50, tile_size_y=70): # To be finished
 #        with rasterio.open(self.path_to_raster) as dataset:
 #            for col in range(0, self.width, tile_size_x):
@@ -166,6 +197,20 @@ class Raster:
 
         """
         return np.ma.array(arr, mask=mask)
+
+    @classmethod
+    def mask_arr_equal(cls, arr, val):
+        """
+        Mask the values of an array that are  equal to a given value.
+
+        *********
+
+        params:
+            arr -> 3D numpy array (rows, cols, single channel)
+            val -> a value
+
+        """
+        return np.ma.masked_where(arr==val, arr)
 
     @classmethod
     def mask_arr_greater_equal(cls, arr, val):
