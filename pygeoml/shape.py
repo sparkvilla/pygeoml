@@ -56,8 +56,12 @@ class Shapeobj():
         # This will change gdf in place
         self.gdf = self.gdf.to_crs({'init':ref})
 
-    def write_gdf(self):
-        pass
+    def write_gdf(self, outdir=None):
+        fname = os.path.basename(self.path).split('.')[0]+'_dataframe'
+        if not outdir:
+            # set outdir as the input raster location
+            outdir = os.path.dirname(self.path)
+        self.gdf.to_file(os.path.join(outdir,fname))
 
     def make_class_and_id(self):
         """
@@ -68,7 +72,32 @@ class Shapeobj():
         # Add id and classname columns
         self.gdf['id'] = [self.id for i in range(self.gdf.shape[0])]
 
+    def get_classes_df(self):
+        ls = []
+        classes = set(self.gdf['classname'])
+        for cl in classes:
+            df = self.gdf[self.gdf['classname']==cl]
+            ls.append(df)
+        return ls
+
+    def gdf_within_polygon(self, poly):
+        """
+        Update gdf attribute with a new geodataframe with Points only within the
+        Raster polygon
+        """
+        # create a mask
+        mask = self.gdf.within(poly)
+        gdf_within = self.gdf.loc[mask]
+        self.gdf = gdf_within.reset_index(drop=True)
+
+    def rename_field(self, name, new_name):
+        """
+        Update gdf attribute by replacing a classname field
+        """
+        self.gdf.replace(name, new_name, inplace=True)
+
 # assign value to a column based of values of other column
+
 
 #set(new_gdf['classname']) =
 #{'Agriculture',
