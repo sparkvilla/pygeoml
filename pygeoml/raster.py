@@ -2,13 +2,16 @@ import os
 import copy
 import glob
 import re
-#from parser import Sentinel2
 import rasterio
 import rasterio.plot
-from rasterio.plot import reshape_as_image, plotting_extent
+from rasterio.plot import reshape_as_image, reshape_as_raster, plotting_extent
 from rasterio.mask import mask
 from rasterio.merge import merge
 from rasterio.windows import Window
+from rasterio import Affine, MemoryFile
+from rasterio.enums import Resampling
+from rasterio.crs import CRS
+
 import numpy as np
 import matplotlib.pyplot as plt
 from shapely.geometry import Point, Polygon, mapping
@@ -19,10 +22,9 @@ class Raster:
     Base raster class to process geo-referenced raster data.
     """
 
-    def __init__(self, path_to_raster, outdir=None):
+    def __init__(self, path_to_raster):
 
         self.path_to_raster = path_to_raster
-        self.outdir = outdir
 
         with rasterio.open(path_to_raster) as dataset:
             self.driver = dataset.driver
@@ -34,14 +36,16 @@ class Raster:
             self.width = dataset.width
             self.transform = dataset.transform
             self.bounds = dataset.bounds
+            self.nodata = dataset.nodata
+            self.nodatavals = dataset.nodatavals
 
     def __str__(self):
         return "Raster(height: {}, width: {}, bands: {})".format(self.height, self.width, self.count)
 
     def __repr__(self):
-        return 'Rastermps({})'.format(self.path_to_raster)
+        return 'Raster({})'.format(self.path_to_raster)
 
-    def load_as_arr(self, height=None, width=None, bands=None, col_off=0, row_off=0):
+    def load_as_arr(self, **kwargs):
         """
 
         Load a raster image as a 3D numpy array. The axis of the array have the order:
@@ -64,21 +68,19 @@ class Raster:
             row_off -> starting row
 
         """
-        # check whether to load the entire array
-        if height is None:
-            height = self.height
-        if width is None:
-            width = self.width
-        # check how many bands to load
-        if bands is None:
-            bands = [i for i in range(1, self.count+1)]
-        else:
-            # make sure bands is a list of indexes
-            if not isinstance(bands, list):
+        # all bands by defauls
+        bands = [i for i in range(1, self.count+1)]
+
+        height, width, bands, col_off, row_off, masked = kwargs.get('height',self.height), kwargs.get('width',self.width),\
+                                                           kwargs.get('bands', bands), kwargs.get('col_off', 0),kwargs.get('row_off', 0),\
+                                                           kwargs.get('masked',False)
+        # Even by passing an int for index
+        # always return a 3D np array
+        if not isinstance(bands, list):
                 bands = [bands]
 
         with rasterio.open(self.path_to_raster) as dataset:
-            img = dataset.read(bands, window=Window(col_off, row_off, width, height))
+            img = dataset.read(bands, window=Window(col_off, row_off, width, height), masked=masked)
         return reshape_as_image(img)
 
     def transform_to_coordinates(self, rows, cols):
@@ -132,60 +134,56 @@ class Raster:
         bottom_left = self.transform_to_coordinates(endrow,0)
         top_right = self.transform_to_coordinates(0,endcol)
         bottom_right = self.transform_to_coordinates(endrow,endcol)
-        coords = [top_left, bottom_left, bottom_right, top_right]
+        coords = [(top_left), (bottom_left), (bottom_right), (top_right)]
 
         return Polygon(coords)
 
-    def get_gdf_within(self, gdf):
-        """
-        Return a new geodataframe with Points only within the
-        Raster polygon
-        """
-        poly = self.get_raster_polygon()
-        # create a mask
-        mask = gdf.within(poly)
-        gdf_within = gdf.loc[mask]
-        return gdf_within
 
-    def show_layer(self, **kwargs):
+    def show(self, **kwargs):
         """
-        Show a raster layer
+        Show a first raster layer
 
         *********
 
         keyword args:
             height -- raster height (default full height)
             width -- raster width (default full width)
-            bands -- band to show (default 1)
+            bands -- band to show, for multiple bands e.g. [1,2,3] (default 0)
             coll_off -- starting column (default 0)
             row_off -- starting row (default 0)
             fcmap -- colormap (defaulf "pink")
             fsize -- figure size (default 10)
             fbar -- figure colorbar (default False)
+            fclim -- figure colorbar range (default None)
 
         """
 
-        height, width, band, col_off, row_off, fcmap, fsize, fbar = kwargs.get('height',self.height), kwargs.get('width',self.width),\
-                                                               kwargs.get('band', 1), kwargs.get('col_off', 0),kwargs.get('row_off', 0),\
-                                                               kwargs.get('fcmap','pink'), kwargs.get('fsize',10), kwargs.get('fbar', False)
+        height, width, bands, col_off, row_off, fcmap, fsize, fbar, fclim = kwargs.get('height', self.height),\
+                             kwargs.get('width', self.width),\
+                             kwargs.get('bands', 0), kwargs.get('col_off', 0),\
+                             kwargs.get('row_off', 0), kwargs.get('fcmap','pink'),\
+                             kwargs.get('fsize', 10), kwargs.get('fbar', False),\
+                             kwargs.get('fclim', None)
 
-        arr = self.load_as_arr(height=height, width=width, bands=band, col_off=col_off, row_off=row_off)
+        arr = self.load_as_arr()
+
         # Plotting
         fig, ax = plt.subplots(figsize=(fsize, fsize))
-        img = ax.imshow(arr[:,:,0], cmap=fcmap)
+
+        if isinstance(bands, int):
+            if not fclim:
+                fclim = (np.min(arr), np.max(arr))
+            img = ax.imshow(arr[:,:,bands], cmap=fcmap)
+            img.set_clim(vmin=fclim[0],vmax=fclim[1])
+        else:
+            img = ax.imshow(arr, cmap=fcmap)
         if fbar:
             fig.colorbar(img, ax=ax)
 
-#    def write_tiles(self, tile_size_x=50, tile_size_y=70): # To be finished
-#        with rasterio.open(self.path_to_raster) as dataset:
-#            for col in range(0, self.width, tile_size_x):
-#                for row in range(0, self.height, tile_size_y):
-#                    #print(row,col)
-#                    tile = dataset.read(window=Window(col, row, tile_size_x, tile_size_y))
-#                    yield tile.shape
+    def write_arr(self, arr):
+        pass
 
-    @classmethod
-    def mask_arr(cls, arr, mask):
+    def mask_arr(self, arr, mask, write=False, outdir=None):
         """
         Mask an array using a mask array.
 
@@ -196,10 +194,29 @@ class Raster:
             mask -> 3D boolean masked array
 
         """
-        return np.ma.array(arr, mask=mask)
+        # Get the number of bands
+        counts = arr.shape[2]
+        # Match with array dimensions
+        mask = np.repeat(mask, counts, axis=2)
+        masked_arr = np.ma.array(arr, mask=mask)
+        masked_arr_filled = np.ma.filled(masked_arr, fill_value=0)
+
+        # write to disk // This is not working !!
+        # How to write masked values to disk?
+        if write:
+            fname = os.path.basename(self.path_to_raster).split('.')[0]+'_masked'
+            # grab and copy metadata
+            new_meta = copy.deepcopy(self.meta)
+            new_meta.update(driver='GTiff')
+            if not outdir:
+                # set outdir as the input raster location
+                outdir = os.path.dirname(self.path_to_raster)
+            with rasterio.open(os.path.join(outdir,fname+'.gtif'), 'w', **new_meta) as dst:
+                dst.write(reshape_as_raster(masked_arr_filled))
+        return masked_arr_filled
 
     @classmethod
-    def mask_arr_equal(cls, arr, val):
+    def mask_arr_equal(cls, arr, vals):
         """
         Mask the values of an array that are  equal to a given value.
 
@@ -207,10 +224,10 @@ class Raster:
 
         params:
             arr -> 3D numpy array (rows, cols, single channel)
-            val -> a value
+            vals -> a list of values
 
         """
-        return np.ma.masked_where(arr==val, arr)
+        return np.ma.MaskedArray(arr, np.in1d(arr, vals))
 
     @classmethod
     def mask_arr_greater_equal(cls, arr, val):
@@ -240,31 +257,9 @@ class Raster:
         """
         return np.ma.masked_less_equal(arr, val)
 
-    @classmethod
-    def load_rgb(cls, red_obj, green_obj, blue_obj, height, width, bands=1, col_off=0,row_off=0):
-        """
-        Calculate and load an RGB 3D numpy array.
-
-        *********
-
-        params:
-            red_obj, green_obj, blue_obj -> Instances of the Raster class
-        """
-        r = red_obj.load_as_arr(height, width, bands, col_off, row_off)
-        g = green_obj.load_as_arr(height, width, bands, col_off, row_off)
-        b = blue_obj.load_as_arr(height, width, bands, col_off, row_off)
-
-
-        rgb_norm = np.empty((height,width,3), dtype=np.float32)
-        rgb_norm[:,:,0] = Raster._normalize(r[:,:,0])
-        rgb_norm[:,:,1] = Raster._normalize(g[:,:,0])
-        rgb_norm[:,:,2] = Raster._normalize(b[:,:,0])
-
-        # normalized RGB natural color composite
-        return rgb_norm
 
     @classmethod
-    def points_on_layer_plot(self, r_obj, layer_arr, gdf, **kwargs):
+    def points_on_layer_plot(self, r_obj, layer_arr, gdf, band=0, **kwargs):
 
         layer_endrow = layer_arr.shape[0]
         layer_endcol = layer_arr.shape[1]
@@ -283,7 +278,7 @@ class Raster:
         # Plotting
         fig, ax = plt.subplots(figsize=(10, 10))
 
-        ax.imshow(layer_arr[:,:,0],
+        ax.imshow(layer_arr[:,:,band],
                       # Set the spatial extent or else the data will not line up with your geopandas layer
                       extent=plotting_extent(r_obj),
                       cmap=cmap)
@@ -295,7 +290,7 @@ class Raster:
         return ax
 
     @classmethod
-    def calc_ndvi(cls, red_obj, nir_obj, height, width, bands=1, col_off=0, row_off=0, write=False):
+    def calc_ndvi(cls, red_obj, nir_obj, write=False):
         """
         Return a calculated ndvi 3D numpy array. The axis of the array have the order:
 
@@ -310,8 +305,8 @@ class Raster:
         When write=True the ndvi is saved to disk as ndvi.gtif
 
         """
-        red_arr = red_obj.load_as_arr(height, width, bands, col_off, row_off)[:,:,0]
-        nir_arr = nir_obj.load_as_arr(height, width, bands, col_off, row_off)[:,:,0]
+        red_arr = red_obj.load_as_arr()[:,:,0]
+        nir_arr = nir_obj.load_as_arr()[:,:,0]
 
         np.seterr(divide='ignore', invalid='ignore')
         ndvi_arr = (nir_arr.astype(float)-red_arr.astype(float))/(nir_arr.astype(float)+red_arr.astype(float))
@@ -327,6 +322,129 @@ class Raster:
                 dst.write(ndvi_arr, 1)
         return ndvi_arr
 
+    @classmethod
+    def georeference(cls, r_obj, epsg, ulc_easting, ulc_northing, cell_width, cell_nheight, rotation=0, outdir=None):
+        """
+        Uses a scene classification file (20m or 60m resolution) to build a mask array
+
+        ************
+
+        args:
+            filepath -- Full path to scf file
+        """
+        # classification_mask:
+        # 3 -> cloud_shadow
+        # 8 -> cloud_medium_probability
+        # 9 -> cloud_high_probability
+        # see https://earth.esa.int/web/sentinel/technical-guides/sentinel-2-msi/level-2a/algorithm
+
+        # Build transform and crs attributes
+        transform = Affine(cell_width, rotation, ulc_easting, rotation, cell_nheight, ulc_northing)
+        crs = CRS.from_epsg(epsg)
+
+        new_meta = copy.deepcopy(r_obj.meta)
+        new_meta.update(transform=transform, driver='GTiff', crs=crs)
+
+        with rasterio.open(r_obj.path_to_raster) as dataset:
+            r_arr = dataset.read()
+
+        fname = os.path.basename(r_obj.path_to_raster).split('.')[0]+'_georeferenced'
+        if not outdir:
+            # set outdir as the input raster location
+            outdir = os.path.dirname(r_obj.path_to_raster)
+
+        with rasterio.open(os.path.join(outdir,fname+'.gtif'), 'w', **new_meta) as dst:
+            dst.write(r_arr)
+        return Raster(os.path.join(outdir,fname+'.gtif'))
+
+    @classmethod
+    def resample(cls, r_obj, scale=2):
+        """
+        Uses a scene classification file (20m or 60m resolution) to build a mask array
+
+        ************
+
+        args:
+            filepath -- Full path to scf file
+        """
+        # classification_mask:
+        # 3 -> cloud_shadow
+        # 8 -> cloud_medium_probability
+        # 9 -> cloud_high_probability
+        # see https://earth.esa.int/web/sentinel/technical-guides/sentinel-2-msi/level-2a/algorithm
+        t = r_obj.transform
+
+        # rescale the metadata
+        transform = Affine(t.a / scale, t.b, t.c, t.d, t.e / scale, t.f)
+        height = r_obj.height * scale
+        width = r_obj.width * scale
+
+        new_meta = copy.deepcopy(r_obj.meta)
+        new_meta.update(transform=transform, driver='GTiff', height=height, width=width)
+
+        # UP-sampling
+        with rasterio.open(r_obj.path_to_raster) as dataset:
+            r_arr = dataset.read(out_shape=(dataset.count, height , width), resampling=Resampling.nearest)
+
+        # mask resampled array
+        #arr_mask = np.ma.MaskedArray(arr, np.in1d(arr, masking_values))
+        desc = 'orig. raster: {:.1f}m; resampled to: {:.1f}m resolution'.format(r_obj.transform[0], transform[0])
+
+        fname = os.path.basename(r_obj.path_to_raster).split('.')[0]+'_resampled'
+        path = os.path.dirname(r_obj.path_to_raster)
+        with rasterio.open(os.path.join(path,fname+'.gtif'), 'w', **new_meta) as dst:
+            dst.descriptions = [desc]
+            dst.write(r_arr)
+        return Raster(os.path.join(path,fname+'.gtif'))
+
+    @classmethod
+    def stitch(cls, r_obj_up, r_obj_down, axis=0, write=False, outdir=None):
+        """
+        Uses a scene classification file (20m or 60m resolution) to build a mask array
+
+        ************
+
+        args:
+            filepath -- Full path to scf file
+        """
+
+        height = r_obj_up.height + r_obj_down.height
+        width = r_obj_up.width
+
+        new_meta = copy.deepcopy(r_obj_up.meta)
+        new_meta.update(driver='GTiff', height=height, width=width)
+
+        arr_up = r_obj_up.load_as_arr()
+        arr_down = r_obj_down.load_as_arr()
+
+        arr_final = np.concatenate((arr_up, arr_down), axis=axis)
+
+        if write:
+            fname = os.path.basename(r_obj_up.path_to_raster).split('.')[0]+'_stitched'
+            if not outdir:
+                # set outdir as the input raster location
+                outdir = os.path.dirname(r_obj_up.path_to_raster)
+
+            with rasterio.open(os.path.join(outdir,fname+'.gtif'), 'w', **new_meta) as dst:
+                dst.write(reshape_as_raster(arr_final))
+        return arr_final
+
+    @classmethod
+    def merge_rasters(cls, paths):
+
+        if paths:
+            src_files_to_mosaic = []
+            paths_new = paths[:]
+
+        for path in paths_new:
+            src = rasterio.open(path)
+            src_files_to_mosaic.append(src)
+
+        mosaic, out_trans = merge(src_files_to_mosaic, indexes=[40,41])
+        return mosaic, out_trans
+
+
+
     @staticmethod
     def _normalize(arr):
         """Normalizes numpy arrays into scale 0.0 - 1.0"""
@@ -340,18 +458,22 @@ class Rastermsp(Raster):
         assert self.count > 1, '"Rastermsp" class process multibands raster only, your raster has a single band. Try to use the "Raster" class instead.'
 
     @classmethod
-    def create_stack(cls, dirpath, parser, name='multibands'):
+    def create_stack(cls, indir, parser, outdir=None):
 
-        parse = parser(dirpath)
-
-        fname = name+'_'+parse.date+'.gtif'
-
-        #filepath for image we're writing out
-        img_fp = os.path.join(dirpath, fname)
+        parse = parser(indir)
 
         # get raster files and tags
         srfiles = [ i[0] for i in parse.srfiles]
         srfiles_tags = [ i[1] for i in parse.srfiles]
+
+
+        fname = 'multibands.gtif'
+        if not outdir:
+            # set outdir as the input raster location
+            outdir = indir
+        #filepath for image we're writing out
+        img_fp = os.path.join(outdir, fname)
+
         # Read metadata of first file and assume all other bands are the same
         with rasterio.open(srfiles[0]) as src0:
             meta = src0.meta
@@ -543,14 +665,3 @@ class Rasterhsp(Raster):
 
         """
         return self.load_as_arr(height=1, width=1, col_off=col, row_off=row)[0,0,:]
-
-if __name__ == '__main__':
-    basedir = '/home/diego/work/dev/ess_diego/'
-
-    imgdir = os.path.join(basedir,'Data_Diego/S2B_MSIL1C_20190812T073619_N0208_R092_T37MBN_20190812T102512.SAFE/GRANULE/L1C_T37MBN_A012702_20190812T075555/IMG_DATA')
-
-    # Load raster stack
-    #r = Rastermsp((os.path.join(imgdir,'Sentinel2_20170718_.tif')))
-    # Load rsater ndvi
-    r = Rastermsp((os.path.join(imgdir,'Sentinel2_20190812_.tif')))
-    rgb_arr = r.load_RGB_layers()
