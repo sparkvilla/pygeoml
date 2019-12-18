@@ -1,10 +1,11 @@
 import matplotlib.pyplot as plt
+import numpy as np
 import os
 import glob
 import copy
 
 from rasterio.plot import reshape_as_image
-from raster import Raster, Rastermsp
+from raster import Raster, Rastermsp, Rasterhsp
 from parser import Sentinel2
 from shape import Shapeobj
 from train import Trainingdata
@@ -42,28 +43,37 @@ def wf1():
     td3.save_xy('base_and_ndvi_extracted',outdir)
 
 if __name__ == "__main__":
+    #basedir = '/home/diego/work/dev/ess_diego/Data_Diego'
+
+    #outdir = '/home/diego/work/dev/ess_diego/Data_Diego/Oli/output'
+    #fpathr_g_st_l = os.path.join(outdir, 'f020414t02p01r06_geo_s01_georeferenced_stitched.gtif')
+    #fpathr_g_st_r = os.path.join(outdir, 'f020414t02p01r07_geo_s01_georeferenced_stitched.gtif')
+    #mos, ot = Rasterhsp.merge_rasters([fpathr_g_st_l,fpathr_g_st_r])
 
     basedir = '/home/diego/work/dev/ess_diego/Data_Diego'
 
+    # 2A-Level original data 10 m
+    datadir = os.path.join(basedir,'Hanneke/S2A_MSIL2A_20190628T073621_N9999_R092_T37MBN_20191121T145522.SAFE/GRANULE/L2A_T37MBN_A020967_20190628T075427/IMG_DATA/R10m')
+    outdir = os.path.join(basedir,'Hanneke/output/S2A_MSIL2A_20190628T073621_N9999_R092_T37MBN_20191121T145522.SAFE')
 
-    #Get data with 10m resolution
-    datadir = os.path.join(basedir,
-            'S2B_MSIL2A_20190812T073619_N9999_R092_T37MBN_20190919T144441.SAFE/GRANULE/L2A_T37MBN_A012702_20190812T075555/IMG_DATA/R10m/')
-    shpdir = os.path.join(datadir,'field_points')
-    fpath_r = os.path.join(datadir,'multibands_20190812.gtif')
-    fpath_ndvi = os.path.join(datadir,'ndvi.gtif')
-    fpath_red = os.path.join(datadir,'T37MBN_20190812T073619_B04_10m.jp2')
-    fpath_shape = os.path.join(shpdir,'field_points.shp')
-    # Instanciate stack, red, ndvi and shape objects
-    r = Rastermsp(fpath_r)
-    r_ndvi = Raster(fpath_ndvi)
+    # Load raster
+    fpath_red = os.path.join(datadir,'T37MBN_20190628T073621_B04_10m.jp2')
     r_red = Raster(fpath_red)
-    shapes = Shapeobj(fpath_shape)
-    red_arr = r_red.load_as_arr()
+    poly = r_red.get_raster_polygon()
 
-    # load a new gdf that excludes points outside the raster polygon boundaries
-    new_gdf = r_red.get_gdf_within(shapes.gdf)
+    # Field measurments
+    shpdir = os.path.join(outdir,'field_points_dataframe')
+    stackdir = os.path.join(outdir,'multibands_masked.gtif')
+    pt = Shapeobj(os.path.join(shpdir,'field_points_dataframe.shp'))
+    #field_pt.gdf_within_polygon(poly)
+    #field_pt.rename_field("Tree plantation", "Tree_plantation")
+    #field_pt.rename_field("Bare rock", "Bare_rock")
+    #field_pt.write_gdf(outdir=outdir)
 
-    Raster.points_on_layer_plot(r_red, red_arr, new_gdf, s_markersize=7)
-
-    plt.show()
+    stack = Rastermsp(stackdir)
+    # get a mask for this dataset
+    #c_mask = np.load(os.path.join(outdir,'mask_10m'), allow_pickle=True)
+    stack_arr = stack.load_as_arr()
+    # Mask stack
+    #stack_masked = stack.mask_arr(stack_arr, c_mask.mask, write=True, outdir=outdir)
+    train = Trainingdata.calc_xy(stackdir, pt.gdf, write=True, outdir=outdir)
