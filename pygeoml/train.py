@@ -48,13 +48,23 @@ class Trainingdata:
         return Trainingdata(final_x,self.y)
 
     @classmethod
+    def to_df(cls, X, y):
+        # check X feature and y labels have the same 0 dimension
+        assert X.shape[0] == y.shape[0], "X and y should have the same 0 dimension"
+        df = pd.DataFrame(data=X,
+                          index=[i for i in range(0, X.shape[0])],
+                          columns=["Band"+str(i) for i in range(1, X.shape[1]+1)])
+        df['labels'] = y.tolist()
+        return df
+
+    @classmethod
     def load_xy(cls, path_to_x, path_to_y):
         X = np.load(path_to_x)
         y = np.load(path_to_y)
         return Trainingdata(X,y)
 
     @classmethod
-    def calc_xy(cls, path_to_raster, list_gdfs, write=False):
+    def calc_xy(cls, path_to_raster, gdf, write=False, outdir=None):
         """
         Build the X feature matrix by extracting the pixel values from the raster
         at the point location.
@@ -69,10 +79,10 @@ class Trainingdata:
 
         """
         # Create a (geometry, classname, id) geodf of all classes geodf
-        shapefiles = gpd.GeoDataFrame(pd.concat(list_gdfs,ignore_index=True, sort=False))
+        # shapefiles = gpd.GeoDataFrame(pd.concat(list_gdfs,ignore_index=True, sort=False))
 
         # Numpy array of shapely objects
-        geoms = shapefiles.geometry.values
+        geoms = gdf.geometry.values
 
         # extract the raster values within the polygon
         with rasterio.open(path_to_raster) as src:
@@ -86,21 +96,23 @@ class Trainingdata:
                 # the mask function returns an array of the raster pixels within this feature
                 # out_image.shape == (band_count,1,1) for one Point Object
                 out_image, out_transform = mask(src, feature, crop=True)
-                # eliminate all the pixels with 0 values for all 8 bands - AKA not actually part of the shapefile
-                #out_image_trimmed = out_image[:,~np.all(out_image == 0, axis=0)]
-                # eliminate all the pixels with 255 values for all 8 bands - AKA not actually part of the shapefile
-                #out_image_trimmed = out_image_trimmed[:,~np.all(out_image_trimmed == 255, axis=0)]
 
                 # reshape the array to [pixel values, band_count]
                 out_image_reshaped = out_image.reshape(-1, src.count)
-
-                y = np.append(y,[shapefiles["classname"][index]] * out_image_reshaped.shape[0])
+                # Checks for out_image_reshaped == 0
+                # If equal to zero (masked) it will not be included in the final X,y
+                if np.count_nonzero(out_image_reshaped) == 0:
+                    continue
+                y = np.append(y,[gdf["classname"][index]] * out_image_reshaped.shape[0])
                 X = np.vstack((X,out_image_reshaped))
 
-        outdir = os.path.dirname(path_to_raster)
-        fname = os.path.splitext(os.path.basename(path_to_raster))[0]
-        np.save(os.path.join(outdir,fname+'_features.npy'),X)
-        np.save(os.path.join(outdir,fname+'_lables.npy'),y)
+        if write:
+            fname = os.path.splitext(os.path.basename(path_to_raster))[0]
+            if not outdir:
+                # set outdir as the input raster location
+                outdir = os.path.dirname(path_to_raster)
+            np.save(os.path.join(outdir,fname+'_features.npy'),X)
+            np.save(os.path.join(outdir,fname+'_lables.npy'),y)
 
         return Trainingdata(X,y)
 
