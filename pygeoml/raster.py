@@ -105,9 +105,10 @@ class Raster:
         Yields patches of the entire raster as numpy array.
 
         params:
-            v_split -- number of split along the vertical (rows) of the raster
-            h_split -- number of split along the horizontal (rows) of the raster
-
+            v_split -> number of times the raster will be divided
+                       along its height
+            h_split -> number of times the raster will be divided
+                       along its width
         """
         # get patch arrays
         v_arrays = np.array_split(np.arange(self.height), v_split)
@@ -117,7 +118,8 @@ class Raster:
             v_start = v_arr[0]
             for h_arr in h_arrays:
                 h_start = h_arr[0]
-                arr = self.load_as_arr(height=len(v_arr), width=len(h_arr), col_off=h_start, row_off=v_start)
+                arr = self.load_as_arr(height=len(v_arr), width=len(h_arr),
+                                       col_off=h_start, row_off=v_start)
                 yield (v_start, h_start, arr)
 
     def get_raster_polygon(self):
