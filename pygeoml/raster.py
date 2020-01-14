@@ -17,6 +17,9 @@ import matplotlib.pyplot as plt
 from shapely.geometry import Point, Polygon, mapping
 from memory_profiler import profile
 
+from pygeoml.utils import raster_to_disk
+
+
 class Raster:
     """
     Base raster class to process geo-referenced raster data.
@@ -60,12 +63,12 @@ class Raster:
         If raster is a multi layer stack use 'band' to select a single or multiple bands of choice.
 
 
-        params:
-            height -> height (number of rows)
-            width -> width (number of cols)
-            bands -> number of layers
-            col_off -> starting column
-            row_off -> starting row
+        keyword args:
+            height -- raster height (default full height)
+            width -- raster width (default full width)
+            bands -- number of bands to load, for multiple bands e.g. [1,2,3] (default all bands)
+            col_off -- starting column (default 0)
+            row_off -- starting row (default 0)
 
         """
         # all bands by defauls
@@ -97,29 +100,25 @@ class Raster:
         row,col = rasterio.transform.rowcol(self.transform, xs, ys)
         return row, col
 
-    def extract_pixel_value(self, gdf):
+    def get_patches(self, v_split, h_split):
         """
-        It returns pixel values at Point coordinates contained in gdf
-
+        Yields patches of the entire raster as numpy array.
 
         params:
-            gdf -- Geopandas dataframe. A column named 'geometry' is expected
+            v_split -- number of split along the vertical (rows) of the raster
+            h_split -- number of split along the horizontal (rows) of the raster
 
         """
-        gdf_copy = gdf.copy()
+        # get patch arrays
+        v_arrays = np.array_split(np.arange(self.height), v_split)
+        h_arrays = np.array_split(np.arange(self.width), h_split)
 
-        geoms = gdf_copy.geometry.values
-
-        with rasterio.open(self.path_to_raster) as src:
-            pixel_values = np.array([]).reshape(0,src.count)
-            for index, geom in enumerate(geoms):
-                feature = [mapping(geom)]
-                #3D np array
-                out_image, out_transform = mask(src, feature, crop=True)
-                #2D np array
-                out_image_reshaped = out_image.reshape(-1, src.count)
-                pixel_values = np.vstack((pixel_values,out_image_reshaped))
-        return pixel_values
+        for v_arr in v_arrays:
+            v_start = v_arr[0]
+            for h_arr in h_arrays:
+                h_start = h_arr[0]
+                arr = self.load_as_arr(height=len(v_arr), width=len(h_arr), col_off=h_start, row_off=v_start)
+                yield (v_start, h_start, arr)
 
     def get_raster_polygon(self):
         """
@@ -190,29 +189,26 @@ class Raster:
         *********
 
         params:
-            arr -> 3D numpy array (rows, cols, single channel)
+            arr -> 3D numpy array (rows, cols, channels)
             mask -> 3D boolean masked array
 
+        return:
+            masked_arr_filled -> masked 3D numpy array
         """
         # Get the number of bands
         counts = arr.shape[2]
-        # Match with array dimensions
+        # Match mask with array dimensions
         mask = np.repeat(mask, counts, axis=2)
         masked_arr = np.ma.array(arr, mask=mask)
+        # Fill masked vales with zero !! maybe to be changed
         masked_arr_filled = np.ma.filled(masked_arr, fill_value=0)
 
-        # write to disk // This is not working !!
-        # How to write masked values to disk?
         if write:
-            fname = os.path.basename(self.path_to_raster).split('.')[0]+'_masked'
             # grab and copy metadata
             new_meta = copy.deepcopy(self.meta)
             new_meta.update(driver='GTiff')
-            if not outdir:
-                # set outdir as the input raster location
-                outdir = os.path.dirname(self.path_to_raster)
-            with rasterio.open(os.path.join(outdir,fname+'.gtif'), 'w', **new_meta) as dst:
-                dst.write(reshape_as_raster(masked_arr_filled))
+            raster_to_disk(masked_arr_filled, 'masked', new_meta,
+                           self.path_to_raster, outdir)
         return masked_arr_filled
 
     @classmethod
@@ -323,7 +319,7 @@ class Raster:
         return ndvi_arr
 
     @classmethod
-    def georeference(cls, r_obj, epsg, ulc_easting, ulc_northing, cell_width, cell_nheight, rotation=0, outdir=None):
+    def georeference_raster(cls, r_obj, epsg, ulc_easting, ulc_northing, cell_width, cell_nheight, rotation=0, outdir=None):
         """
         Uses a scene classification file (20m or 60m resolution) to build a mask array
 
@@ -332,11 +328,6 @@ class Raster:
         args:
             filepath -- Full path to scf file
         """
-        # classification_mask:
-        # 3 -> cloud_shadow
-        # 8 -> cloud_medium_probability
-        # 9 -> cloud_high_probability
-        # see https://earth.esa.int/web/sentinel/technical-guides/sentinel-2-msi/level-2a/algorithm
 
         # Build transform and crs attributes
         transform = Affine(cell_width, rotation, ulc_easting, rotation, cell_nheight, ulc_northing)
@@ -358,20 +349,31 @@ class Raster:
         return Raster(os.path.join(outdir,fname+'.gtif'))
 
     @classmethod
-    def resample(cls, r_obj, scale=2):
+    def resample_raster(cls, r_obj, scale=2, outdir=None):
         """
-        Uses a scene classification file (20m or 60m resolution) to build a mask array
+        Change the cell size of an existing raster object.
+
+        Can be used for both:
+
+        Upsampling; converting to higher resolution/smaller cells
+        Downsampling converting to lower resolution/larger cells
+
+        a raster object.
+
+        Save the new raster directly to disk.
 
         ************
 
-        args:
-            filepath -- Full path to scf file
+        params:
+            r_obj -> An istance of the Raster class
+            scale -> scaling factor to change the cell size with.
+                     scale = 2 -> Upsampling e.g from 10m to 20m resolution
+                     scale = 0.5 -> Downsampling e.g from 20m to 10m resolution
+            outdir -> full path to output directory
+
+        return:
+            a Raster instance of the resampled raster.
         """
-        # classification_mask:
-        # 3 -> cloud_shadow
-        # 8 -> cloud_medium_probability
-        # 9 -> cloud_high_probability
-        # see https://earth.esa.int/web/sentinel/technical-guides/sentinel-2-msi/level-2a/algorithm
         t = r_obj.transform
 
         # rescale the metadata
@@ -385,17 +387,12 @@ class Raster:
         # UP-sampling
         with rasterio.open(r_obj.path_to_raster) as dataset:
             r_arr = dataset.read(out_shape=(dataset.count, height , width), resampling=Resampling.nearest)
+            np_arr = reshape_as_image(r_arr)
 
-        # mask resampled array
-        #arr_mask = np.ma.MaskedArray(arr, np.in1d(arr, masking_values))
-        desc = 'orig. raster: {:.1f}m; resampled to: {:.1f}m resolution'.format(r_obj.transform[0], transform[0])
+        rpath = raster_to_disk(np_arr, 'resampled', new_meta,
+                       r_obj.path_to_raster, outdir)
 
-        fname = os.path.basename(r_obj.path_to_raster).split('.')[0]+'_resampled'
-        path = os.path.dirname(r_obj.path_to_raster)
-        with rasterio.open(os.path.join(path,fname+'.gtif'), 'w', **new_meta) as dst:
-            dst.descriptions = [desc]
-            dst.write(r_arr)
-        return Raster(os.path.join(path,fname+'.gtif'))
+        return Raster(rpath)
 
     @classmethod
     def stitch(cls, r_obj_up, r_obj_down, axis=0, write=False, outdir=None):
