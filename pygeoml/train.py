@@ -51,6 +51,25 @@ class Trainingdata:
         classnames = list(set(self.y))
         self.str_int_map = {classnames[idx]:idx for idx in range(0,len(classnames))}
 
+
+    def exclude_classes(self, n=10):
+        """
+        Esclude classes with samples less then a minimum number
+
+        *************
+
+        params:
+            n -> minimum number of samples (default 10)
+        """
+        unique, counts = np.unique(self.y, return_counts=True)
+        freq_cls_map = dict(zip(unique, counts))
+        # get classes with samples less than the minimum number n
+        lowfreq_cls = dict(filter(lambda elem: elem[1] < n,
+                                  freq_cls_map.items())).keys()
+        idx_mask = np.isin(self.y, list(lowfreq_cls))
+        self.y = self.y[~idx_mask]
+        self.X = self.X[~idx_mask]
+
     @classmethod
     def to_df(cls, X, y):
         # check X feature and y labels have the same 0 dimension
@@ -147,7 +166,7 @@ class Trainingdata:
                          the same height and width of r_obj
         """
         # Allocate a numpy array for strings
-        class_final = np.empty((r_obj.height,r_obj.width), dtype="S10")
+        class_final = np.empty((r_obj.height,r_obj.width), dtype=np.string_)
 
         for row, col, patch in r_obj.get_patches(v_split, h_split):
             np.nan_to_num(patch, copy=False,nan=0.0, posinf=0,neginf=0)
