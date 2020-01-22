@@ -10,8 +10,9 @@ class Sentinel2:
     PATTERN = re.compile(
             # example pattern to match
             # T37MBN_20170718T075211_B02.jp2
-            r'.*_(?P<date>[0-9]{8})'
-            r'.*_(?P<band>B0(2|3|4|8))'
+            r'(?P<tile_n>^T\d{2}MBN)'
+            r'_(?P<date>[0-9]{8})'
+            r'.*_((?P<band>B0(2|3|4|8)))'
             r'.*(?P<fext>jp2$)'
             )
 
@@ -29,6 +30,7 @@ class Sentinel2:
                                                  path_to_f),
                                     self.lookup[match.group('band')]))
                 self.date = match.group('date')
+                self.tile = match.group('tile_n')
         self._verify_rfiles_not_empty()
         # sort by the Band number
         self.srfiles = sorted(self.rfiles)
@@ -45,15 +47,14 @@ if __name__ == '__main__':
     basedir = '/home/diego/work/dev/ess_diego/Data_Diego'
 
     # Work with scene classification 20m resolution
-    datadir_20m = os.path.join(basedir,'Hanneke/S2A_MSIL2A_20190628T073621_N9999_R092_T37MBN_20191121T145522.SAFE/GRANULE/L2A_T37MBN_A020967_20190628T075427/IMG_DATA/R20m')
-    fpath_scl_20m = os.path.join(datadir_20m,'T37MBN_20190628T073621_SCL_20m.jp2')
-    mask = Sentinel2.calc_cloud_mask(fpath_scl_20m, 20)
+    imgdir = os.path.join(basedir,'Hanneke/S2A_MSIL2A_20190628T073621_N9999_R092_T37MBN_20191121T145522.SAFE/GRANULE/L2A_T37MBN_A020967_20190628T075427/IMG_DATA/R20m')
 #    imgdir = os.path.join(
 #        basedir,
 #        'S2B_MSIL2A_20190812T073619_N9999_R092_T37MBN_20190919T144441.SAFE/GRANULE/L2A_T37MBN_A012702_20190812T075555/IMG_DATA/R10m/')
 
-#    p = Sentinel2(imgdir)
-#    print(p.rfiles)
+    p = Sentinel2(imgdir)
+    print(p.rfiles)
 #    print("")
-#    print(p.srfiles)
-#    print(p.date)
+    print(p.srfiles)
+    print(p.date)
+    print(p.tile)
