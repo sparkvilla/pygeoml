@@ -1,23 +1,19 @@
 import os
 import copy
-import glob
-import re
 import rasterio
 import rasterio.plot
 from rasterio.plot import reshape_as_image, reshape_as_raster, plotting_extent
-from rasterio.mask import mask
 from rasterio.merge import merge
 from rasterio.windows import Window
-from rasterio import Affine, MemoryFile
+from rasterio import Affine
 from rasterio.enums import Resampling
 from rasterio.crs import CRS
 
 import numpy as np
 import matplotlib.pyplot as plt
-from shapely.geometry import Point, Polygon, mapping
-from memory_profiler import profile
+from shapely.geometry import Polygon
 
-from pygeoml.utils import raster_to_disk
+from pygeoml.utils import raster_to_disk, mask_and_fill, stack_to_disk
 
 
 class Raster:
@@ -59,14 +55,15 @@ class Raster:
         This is the order expected by image processing and visualization software;
         i.e. matplotlib, scikit-image, etc..
 
-        Use 'heigh' and 'width' to load only a window of the raster.
-        If raster is a multi layer stack use 'band' to select a single or multiple bands of choice.
+        Use 'heigh' and 'width' to load only a window of the raster
+        and 'band' to select a single or multiple bands of choice.
 
 
         keyword args:
             height -- raster height (default full height)
             width -- raster width (default full width)
-            bands -- number of bands to load, for multiple bands e.g. [1,2,3] (default all bands)
+            bands -- number of bands to load, for multiple bands
+                     use [1,2,3] (default all bands)
             col_off -- starting column (default 0)
             row_off -- starting row (default 0)
 
@@ -191,26 +188,20 @@ class Raster:
         *********
 
         params:
-            arr -> 3D numpy array (rows, cols, channels)
+            arr -> 3D numpy array  to be masked (rows, cols, channels)
             mask -> 3D boolean masked array
 
         return:
             masked_arr_filled -> masked 3D numpy array
         """
-        # Get the number of bands
-        counts = arr.shape[2]
-        # Match mask with array dimensions
-        mask = np.repeat(mask, counts, axis=2)
-        masked_arr = np.ma.array(arr, mask=mask)
-        # Fill masked vales with zero !! maybe to be changed
-        masked_arr_filled = np.ma.filled(masked_arr, fill_value=0)
-
+        masked_arr_filled = mask_and_fill(arr, mask)
         if write:
             # grab and copy metadata
             new_meta = copy.deepcopy(self.meta)
             new_meta.update(driver='GTiff')
             raster_to_disk(masked_arr_filled, 'masked', new_meta,
-                           self.path_to_raster, outdir)
+                           self.path_to_raster, True, outdir)
+
         return masked_arr_filled
 
     @classmethod
@@ -442,13 +433,12 @@ class Raster:
         mosaic, out_trans = merge(src_files_to_mosaic, indexes=[40,41])
         return mosaic, out_trans
 
-
-
     @staticmethod
     def _normalize(arr):
         """Normalizes numpy arrays into scale 0.0 - 1.0"""
         array_min, array_max = arr.min(), arr.max()
         return ((arr - array_min)/(array_max - array_min))
+
 
 class Rastermsp(Raster):
 
@@ -457,63 +447,32 @@ class Rastermsp(Raster):
         assert self.count > 1, '"Rastermsp" class process multibands raster only, your raster has a single band. Try to use the "Raster" class instead.'
 
     @classmethod
-    def create_stack(cls, indir, parser, outdir=None):
+    def create_stack(cls, rfiles, outdir, mask=None):
+        """
+        Create a stack of rasters
 
-        parse = parser(indir)
+        ************
 
-        # get raster files and tags
-        srfiles = [ i[0] for i in parse.srfiles]
-        srfiles_tags = [ i[1] for i in parse.srfiles]
+        params:
+            rfiles -> list of raster paths to be stacked
+            outdir -> full path to output directory
+            mask -> 3D boolean masked array
 
-
-        fname = 'multibands.gtif'
-        if not outdir:
-            # set outdir as the input raster location
-            outdir = indir
-        #filepath for image we're writing out
-        img_fp = os.path.join(outdir, fname)
+        return:
+            a Raster instance of the stack
+        """
 
         # Read metadata of first file and assume all other bands are the same
-        with rasterio.open(srfiles[0]) as src0:
+        with rasterio.open(rfiles[0]) as src0:
             meta = src0.meta
             # Update  metadata to reflect the number of layers
-            meta.update(count = len(srfiles))
-            # Read # each # layer # and # write # it # to # stack
-        with rasterio.open(img_fp, 'w', **meta) as dst:
-            # Update # description # for # the # stack
-            dst.descriptions = srfiles_tags
-            for _id, layer in enumerate(srfiles, start=1):
-                with rasterio.open(layer) as src1:
-                    dst.write_band(_id, src1.read(1))
-        return Rastermsp(img_fp)
+            meta.update(count = len(rfiles))
+        stack_fname = 'multibands'
+        if mask is not None:
+            stack_fname = 'multibands_masked'
+        stack_path = stack_to_disk(rfiles, stack_fname, meta, outdir, mask)
+        return Rastermsp(stack_path)
 
-
-    def load_rgb(self, height=None, width=None, col_off=0,row_off=0):
-        if self.desc:
-            try:
-                # Use rasterio indexing
-                red_idx = self.desc.index('Sent2_B04')+1
-                green_idx = self.desc.index('Sent2_B03')+1
-                blue_idx = self.desc.index('Sent2_B02')+1
-            except ValueError:
-                print("Band description of the form {} expected. Your desc is {} instead".format('Sent2_B0*',self.desc))
-        else:
-            raise ValueError("No available description for this raster")
-
-        if width is None:
-            width = self.width
-        if height is None:
-            height = self.height
-
-        rgb = self.load_as_arr(height, width, [red_idx,green_idx,blue_idx], col_off, row_off)
-
-        rgb_norm = np.empty((height,width,3), dtype=np.float32)
-        rgb_norm[:,:,0] = self._normalize(rgb[:,:,0])
-        rgb_norm[:,:,1] = self._normalize(rgb[:,:,1])
-        rgb_norm[:,:,2] = self._normalize(rgb[:,:,2])
-
-        # normalized RGB natural color composite
-        return rgb_norm
 
     @classmethod
     def points_on_layer_plot(self, r_obj, arr, gdf, **kwargs):
