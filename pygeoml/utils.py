@@ -2,7 +2,32 @@ import os
 import numpy as np
 
 import rasterio
-from rasterio.plot import reshape_as_raster
+from rasterio.plot import reshape_as_raster, reshape_as_image
+
+
+def mask_and_fill(arr, mask, fill_value=0):
+    """
+    Mask an array using a mask array.
+
+    *********
+
+    params:
+        arr -> 3D numpy array to be masked (rows, cols, channels)
+        mask -> 3D boolean masked array
+
+    return:
+        masked_arr_filled -> masked 3D numpy array
+    """
+    # Get the number of bands
+    bands = arr.shape[2]
+    # Match mask with array dimensions
+    mask = np.repeat(mask, bands, axis=2)
+    masked_arr = np.ma.array(arr, mask=mask)
+
+    # Fill masked vales with zero !! maybe to be changed
+    masked_arr_filled = np.ma.filled(masked_arr, fill_value=fill_value)
+
+    return masked_arr_filled
 
 
 def np_to_disk(np_array, np_fname, rpath, outdir=None):
@@ -62,4 +87,30 @@ def raster_to_disk(np_array, new_rname, new_rmeta, orig_rpath, outdir=None):
     new_rpath = os.path.join(outdir, prefix + name)
     with rasterio.open(new_rpath, 'w', **new_rmeta) as dst:
         dst.write(reshape_as_raster(np_array))
+    return new_rpath
+
+
+def stack_to_disk(rfiles, new_rname, new_rmeta, outdir, mask=None):
+    """
+    Stack several rasters layer on a single raster and
+    save it to disk
+    *********
+
+    params:
+        rfiles -> list of raster path to be stacked
+        new_rname -> name of the final stack
+        new_rmeta -> metadata of the final raster
+        outdir -> output directory
+        mask -> 3D boolean masked array
+
+    """
+    name = new_rname + '.gtif'
+    new_rpath = os.path.join(outdir, name)
+    with rasterio.open(new_rpath, 'w', **new_rmeta) as dst:
+        for _id, fl in enumerate(rfiles, start=1):
+            with rasterio.open(fl) as src1:
+                np_arr = reshape_as_image(src1.read())
+                if mask is not None:
+                    np_arr = mask_and_fill(np_arr, mask)
+                    dst.write_band(_id, np_arr[:,:,0])
     return new_rpath
