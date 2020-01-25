@@ -4,6 +4,7 @@ import os
 import glob
 import copy
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import cross_val_score
 
 from rasterio.plot import reshape_as_image
 from raster import Raster, Rastermsp, Rasterhsp
@@ -11,12 +12,23 @@ from parser import Sentinel2
 from shape import Shapeobj
 from train import Trainingdata
 
-def step1(dir10, dir20, scl_name, outdir):
+import logging
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+formatter = logging.Formatter('%(asctime)s:%(levelname)s:%(name)s:%(message)s')
+
+file_handler = logging.FileHandler('../../pygeoml.log')
+file_handler.setFormatter(formatter)
+
+logger.addHandler(file_handler)
+
+def step1(dir10, dir20, fpath_scl, outdir):
     """
     Create a cloud masked stack array
     """
     # 1. create a cloud mask at 10m resol based on scf file
-    fpath_scl = os.path.join(dir20, scl_name)
     r_scf = Raster(fpath_scl)
     ## Upsample scene classification Raster image
     r_scf_resampled = Raster.resample_raster(r_scf, scale=2, outdir=outdir)
@@ -53,16 +65,42 @@ def step2(dirshp, outdir):
 
 def step3(outdir):
     """
+    Use k-fold cross validation to get the best n_estimator param
+    """
+    train = Trainingdata.load_xy(os.path.join(outdir,'multibands_masked_features.npy'), os.path.join(outdir,'multibands_masked_lables.npy'))
+
+    # Choose the best n_estimator value using k-fold cross validation
+    n_est_range = [200, 400, 600, 800, 1000, 1200, 1400, 1600, 1800, 2000]
+    n_est_scores = []
+
+    for n in n_est_range:
+        rf = RandomForestClassifier(n_estimators=n, oob_score=True)
+        scores = cross_val_score(rf, train.X, train.y, cv=10, scoring='accuracy')
+        n_est_scores.append(scores.mean())
+
+    best_score = max(n_est_scores)
+    logger.info('Best score found: {}'.format(best_score) )
+
+    # get index of the maximum score
+    idx_max = n_est_scores.index(best_score)
+
+    best_estimator = n_est_range[idx_max]
+    logger.info('Best estimator: {}'.format(best_estimator) )
+    return best_estimator 
+
+def step4(outdir, n_estimator):
+    """
     Make prediction on real data using a pre-optimized classifier
     """
     stackdir = os.path.join(outdir,'multibands_masked.gtif')
     stack = Rastermsp(stackdir)
     train = Trainingdata.load_xy(os.path.join(outdir,'multibands_masked_features.npy'), os.path.join(outdir,'multibands_masked_lables.npy'))
-    #  Initialize our model with 400 trees
-    rf_f = RandomForestClassifier(n_estimators=800, oob_score=True)
+    #  Initialize our model with n_estimator trees
+    rf_f = RandomForestClassifier(n_estimators=n_estimator, oob_score=True)
     # Fit our model to training data
     rf_f = rf_f.fit(train.X, train.y)
-    class_prediction = Trainingdata.predict(stack, 3, 3, rf_f, write=True, outdir=outdir)
+    logger.info('Classes: {}'.format(np.unique(train.y)))
+    class_prediction = Trainingdata.predict(stack, '|S8', 3, 3, rf_f, write=True, outdir=outdir)
 
 
 def plot_class_prediction():
@@ -130,21 +168,53 @@ def plot_class_prediction():
     plt.show()
 
 
+
+
 if __name__ == "__main__":
 
-    basedir = '/home/diego/work/dev/ess_diego/Data_Diego'
+    basedir = '/mnt/outdata/Hanneke/ESSCharcoal_1_07to112019Sentinel_1_out'
 
-    # 2A-Level original data 10 m
-    datadir_10m = os.path.join(basedir,'Hanneke/S2A_MSIL2A_20190906T073611_N9999_R092_T37MBN_20191121T152023.SAFE/GRANULE/L2A_T37MBN_A021968_20190906T075543/IMG_DATA/R10m')
-    # 2A-Level original data 20 m
-    datadir_20m = os.path.join(basedir,'Hanneke/S2A_MSIL2A_20190906T073611_N9999_R092_T37MBN_20191121T152023.SAFE/GRANULE/L2A_T37MBN_A021968_20190906T075543/IMG_DATA/R20m')
+    # output base directory
+    base_outdir = os.path.join(basedir,'output')
+    
     # shape files
-    datadir_shp = os.path.join(basedir,'Hanneke/S2A_MSIL2A_20190906T073611_N9999_R092_T37MBN_20191121T152023.SAFE/field_points_dataframe')
+    datadir_shp = os.path.join(basedir,'field_points_dataframe')
 
-    # output directory
-    outdir = os.path.join(basedir,'Hanneke/output/S2A_MSIL2A_20190906T073611_N9999_R092_T37MBN_20191121T152023.SAFE_out')
+    data_paths = ['S2A_MSIL2A_20190628T073621_N9999_R092_T37MBN_20191121T145522.SAFE/GRANULE/L2A_T37MBN_A020967_20190628T075427',
+            'S2A_MSIL2A_20190906T073611_N0213_R092_T37MBN_20190906T110000.SAFE/GRANULE/L2A_T37MBN_A021968_20190906T075543',
+            'S2A_MSIL2A_20190906T073611_N9999_R092_T37MBN_20191121T152023.SAFE/GRANULE/L2A_T37MBN_A021968_20190906T075543',
+            'S2A_MSIL2A_20191026T074011_N9999_R092_T37MBN_20191121T154707.SAFE/GRANULE/L2A_T37MBN_A022683_20191026T075457',
+            'S2B_MSIL2A_20190623T073619_N0212_R092_T37MBN_20190623T120816.SAFE/GRANULE/L2A_T37MBN_A011987_20190623T075723',
+            'S2B_MSIL2A_20190623T073619_N9999_R092_T37MBN_20191121T161217.SAFE/GRANULE/L2A_T37MBN_A011987_20190623T075723',
+            'S2B_MSIL2A_20190703T073619_N9999_R092_T37MBN_20191121T163720.SAFE/GRANULE/L2A_T37MBN_A012130_20190703T075901',
+            'S2B_MSIL2A_20190713T073619_N9999_R092_T37MBN_20191121T170202.SAFE/GRANULE/L2A_T37MBN_A012273_20190713T075952',
+            'S2B_MSIL2A_20190723T073619_N9999_R092_T37MBN_20191121T172709.SAFE/GRANULE/L2A_T37MBN_A012416_20190723T075433',
+            'S2B_MSIL2A_20190812T073619_N0213_R092_T37MBN_20190812T105742.SAFE/GRANULE/L2A_T37MBN_A012702_20190812T075555',
+            'S2B_MSIL2A_20190812T073619_N9999_R092_T37MBN_20191121T175134.SAFE/GRANULE/L2A_T37MBN_A012702_20190812T075555']
+
+    for dp in data_paths:
+        dirname = dp.split('/')[0]
+        logger.info('Start workflow for {}'.format(dirname))
+        outdir = os.path.join(base_outdir, dirname + '_out')
+        # Create target Directory if don't exist
+        if not os.path.exists(outdir):
+            os.mkdir(outdir)
+            logger.info('Directory {} created'.format(outdir))
+        else:    
+            logger.info('Directory {} already exists'.format(outdir))
 
 
-    #step1(datadir_10m, datadir_20m, 'T37MBN_20190906T073611_SCL_20m.jp2', outdir)
-    step2(datadir_shp, outdir)
-    #plot_class_prediction()
+        # 2A-Level original data 10 m
+        datadir_10m = os.path.join(basedir, dp, 'IMG_DATA/R10m')
+        # 2A-Level original data 20 m
+        datadir_20m = os.path.join(basedir, dp, 'IMG_DATA/R20m')
+
+        # get the SCL file path
+        for scl in glob.glob(os.path.join(datadir_20m, '*SCL*.jp2')):
+                fpath_scl = scl
+
+        #step1(datadir_10m, datadir_20m, fpath_scl, outdir)
+        #step2(datadir_shp, outdir)
+        best_est = step3(outdir)
+        step4(outdir, best_est)
+        logger.info('Finished workflow for {}'.format(dirname))

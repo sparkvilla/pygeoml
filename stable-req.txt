@@ -64,7 +64,6 @@ prompt-toolkit==2.0.9
 protobuf==3.9.1
 psutil==5.6.3
 ptyprocess==0.6.0
--e git+https://github.com/sparkvilla/pygeoml.git@489efde8260608e8bfc2378078abfcb203457487#egg=pygeoml
 Pygments==2.4.2
 pyparsing==2.4.2
 pyproj==2.4.0

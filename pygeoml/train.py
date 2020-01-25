@@ -11,6 +11,18 @@ import numpy as np
 from shapely.geometry import mapping
 from pygeoml.utils import np_to_disk
 
+import logging
+
+logger = logging.getLogger('train')
+logger.setLevel(logging.DEBUG)
+
+formatter = logging.Formatter('%(asctime)s:%(levelname)s:%(name)s:%(message)s')
+
+file_handler = logging.FileHandler('../../pygeoml.log')
+file_handler.setFormatter(formatter)
+
+logger.addHandler(file_handler)
+
 class Trainingdata:
     """
     Generate/modify:
@@ -145,7 +157,7 @@ class Trainingdata:
         return Trainingdata(X,y)
 
     @staticmethod
-    def predict(r_obj, v_split, h_split, classifier, write=False, outdir=None):
+    def predict(r_obj, string_size, v_split, h_split, classifier, write=False, outdir=None):
         """
         Use an already optimized skitlearn classifier to classify pixels of
         a raster object.
@@ -166,8 +178,9 @@ class Trainingdata:
                          the same height and width of r_obj
         """
         # Allocate a numpy array for strings
-        class_final = np.empty((r_obj.height,r_obj.width), dtype=np.string_)
-
+        class_final = np.empty((r_obj.height,r_obj.width), dtype=string_size)
+        logger.debug('Numpy arr allocated for classname of type {}'.format(class_final.dtype))
+        
         for row, col, patch in r_obj.get_patches(v_split, h_split):
             np.nan_to_num(patch, copy=False,nan=0.0, posinf=0,neginf=0)
             # Generate a prediction array
