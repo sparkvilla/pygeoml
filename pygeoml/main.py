@@ -7,10 +7,11 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import cross_val_score
 
 from rasterio.plot import reshape_as_image
-from raster import Raster, Rastermsp, Rasterhsp
-from parser import Sentinel2
-from shape import Shapeobj
-from train import Trainingdata
+from pygeoml.raster import Raster, Rastermsp, Rasterhsp
+from pygeoml.parser import Sentinel2
+from pygeoml.shape import Shapeobj
+from pygeoml.train import Trainingdata
+from pygeoml.utils import raster_to_disk
 
 import logging
 
@@ -23,6 +24,35 @@ file_handler = logging.FileHandler('../../pygeoml.log')
 file_handler.setFormatter(formatter)
 
 logger.addHandler(file_handler)
+
+class_to_int_map = [(b'Agricult', 1),
+                    (b'Bare_roc', 2),
+                    (b'Building', 3),
+                    (b'Charcoal', 4),
+                    (b'Forest', 5),
+                    (b'Livestoc', 6),
+                    (b'Marsh', 7),
+                    (b'River', 8),
+                    (b'Road', 9),
+                    (b'Tree_pla', 10),
+                    (b'masked', 11)]
+
+
+def str_class_to_int(class_array):
+    # Transform string class in integer class
+    class_array[class_array == class_to_int_map[0][0]] = class_to_int_map[0][1]
+    class_array[class_array == class_to_int_map[1][0]] = class_to_int_map[1][1]
+    class_array[class_array == class_to_int_map[2][0]] = class_to_int_map[2][1]
+    class_array[class_array == class_to_int_map[3][0]] = class_to_int_map[3][1]
+    class_array[class_array == class_to_int_map[4][0]] = class_to_int_map[4][1]
+    class_array[class_array == class_to_int_map[5][0]] = class_to_int_map[5][1]
+    class_array[class_array == class_to_int_map[6][0]] = class_to_int_map[6][1]
+    class_array[class_array == class_to_int_map[7][0]] = class_to_int_map[7][1]
+    class_array[class_array == class_to_int_map[8][0]] = class_to_int_map[8][1]
+    class_array[class_array == class_to_int_map[9][0]] = class_to_int_map[9][1]
+    class_array[class_array == class_to_int_map[10][0]] = class_to_int_map[10][1]
+    return(class_array.astype(int))
+
 
 def step1(dir10, dir20, fpath_scl, outdir):
     """
@@ -86,7 +116,7 @@ def step3(outdir):
 
     best_estimator = n_est_range[idx_max]
     logger.info('Best estimator: {}'.format(best_estimator) )
-    return best_estimator 
+    return best_estimator
 
 def step4(outdir, n_estimator):
     """
@@ -102,23 +132,22 @@ def step4(outdir, n_estimator):
     logger.info('Classes: {}'.format(np.unique(train.y)))
     class_prediction = Trainingdata.predict(stack, '|S8', 3, 3, rf_f, write=True, outdir=outdir)
 
+def step5(outdir):
+    """
+    Convert prediction map back to raster
+    """
+    stackdir = os.path.join(outdir,'multibands_masked.gtif')
+    stack = Rastermsp(stackdir)
+    new_meta = stack.meta
+    new_meta.update(count = 1)
 
-def plot_class_prediction():
     class_prediction = np.load(os.path.join(outdir,'multibands_masked_class_prediction.npy'))
+    class_prediction = str_class_to_int(class_prediction)
 
-    # Transform string class in integer class
+    raster_to_disk(class_prediction, 'raster_map', new_meta, outdir, class_to_int_map)
 
-    def str_class_to_int(class_array):
-        class_array[class_array == b'Agricultur'] = 1
-        class_array[class_array == b'Bare_rock'] = 2
-        class_array[class_array == b'Building'] = 3
-        class_array[class_array == b'CharcoalKi'] = 4
-        class_array[class_array == b'Forest'] = 5
-        class_array[class_array == b'Livestock'] = 6
-        class_array[class_array == b'River'] = 7
-        class_array[class_array == b'Road'] = 8
-        class_array[class_array == b'masked'] = 9
-        return(class_array.astype(int))
+def plot_class_prediction(outdir):
+    class_prediction = np.load(os.path.join(outdir,'multibands_masked_class_prediction.npy'))
 
     class_prediction = str_class_to_int(class_prediction)
 
@@ -132,9 +161,11 @@ def plot_class_prediction():
         (3, (139, 69, 19)),    # saddle brown  - Charcol
         (4, (34, 139, 34)),    # forest green - forest
         (5, (255, 255, 0)),    # yellow - livestock
-        (6, (127, 255, 212)),  # acqua marine - river
-        (7, (178, 34, 34)),    # firebrick - road
-        (8, (255, 255, 255)),  # White - masked
+        (6, (0, 0, 128)),    # navy - marsh
+        (7, (127, 255, 212)),  # acqua marine - river
+        (8, (178, 34, 34)),    # firebrick - road
+        (9, (0, 255, 0)),    # lime - tree_plantation
+        (10, (255, 255, 255)),  # White - masked
     ))
 
     # Transform 0 - 255 color values from colors as float 0 - 1
@@ -150,7 +181,7 @@ def plot_class_prediction():
     from matplotlib.patches import Patch
     # Create a list of labels to use for your legend
     class_labels = ['Agricultur', 'Bare_rock', 'Building', 'CharcoalKi', 'Forest',
-           'Livestock', 'River', 'Road', 'masked']
+           'Livestock', 'Marsh', 'River', 'Road', 'Tree_plant', 'masked']
     # A path is an object drawn by matplotlib. In this case a patch is a box draw on your legend
     # Below you create a unique path or box with a unique color - one for each of the labels above
     legend_patches = [Patch(color=icolor, label=label)
@@ -176,7 +207,7 @@ if __name__ == "__main__":
 
     # output base directory
     base_outdir = os.path.join(basedir,'output')
-    
+
     # shape files
     datadir_shp = os.path.join(basedir,'field_points_dataframe')
 
@@ -200,7 +231,7 @@ if __name__ == "__main__":
         if not os.path.exists(outdir):
             os.mkdir(outdir)
             logger.info('Directory {} created'.format(outdir))
-        else:    
+        else:
             logger.info('Directory {} already exists'.format(outdir))
 
 
@@ -215,6 +246,7 @@ if __name__ == "__main__":
 
         #step1(datadir_10m, datadir_20m, fpath_scl, outdir)
         #step2(datadir_shp, outdir)
-        best_est = step3(outdir)
-        step4(outdir, best_est)
+        #best_est = step3(outdir)
+        #step4(outdir, best_est)
+        step5(outdir)
         logger.info('Finished workflow for {}'.format(dirname))

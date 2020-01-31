@@ -60,10 +60,15 @@ def np_to_disk(np_array, np_fname, rpath, outdir=None):
     return np_path
 
 
-def raster_to_disk(np_array, new_rname, new_rmeta, orig_rpath, outdir=None):
+def raster_to_disk(np_array, new_rname, new_rmeta, outdir, desc=None,
+                   p_rpath=None):
     """
-    Save a numpy array as geo raster to disk using the
-    original raster filename as prefix
+    Save a numpy array as geo-raster to disk
+
+    'desc' param can be used to encode additional information;
+           e.g.in case of a classification map -> int:'classname'
+
+    'p_rpath' param uses a second raster filename as prefix
 
     *********
 
@@ -71,21 +76,25 @@ def raster_to_disk(np_array, new_rname, new_rmeta, orig_rpath, outdir=None):
         np_array -> numpy array to save as raster
         new_rname -> name for the new raster
         new_rmeta -> metadata for the new raster
-        orig_rpath -> full path of the original raster
         outdir -> output directory
+        desc -> list of tuples [(1, classname1), (2, classname2), ...]
+        p_rpath -> full path of the original raster
 
     return:
         new_rpath -> full path of the new raster
 
     """
-
-    prefix = os.path.splitext(os.path.basename(orig_rpath))[0]
     name = '_' + new_rname + '.gtif'
-    if not outdir:
-        # set outdir as the input raster location
-        outdir = os.path.dirname(orig_rpath)
-    new_rpath = os.path.join(outdir, prefix + name)
+    new_rpath = os.path.join(outdir, name)
+
+    if p_rpath:
+        prefix = os.path.splitext(os.path.basename(p_rpath))[0]
+        new_rpath = os.path.join(outdir, prefix + name)
+
     with rasterio.open(new_rpath, 'w', **new_rmeta) as dst:
+        if desc:
+            # Switch on description for the new raster
+            dst.descriptions = desc
         dst.write(reshape_as_raster(np_array))
     return new_rpath
 
@@ -112,5 +121,5 @@ def stack_to_disk(rfiles, new_rname, new_rmeta, outdir, mask=None):
                 np_arr = reshape_as_image(src1.read())
                 if mask is not None:
                     np_arr = mask_and_fill(np_arr, mask)
-                    dst.write_band(_id, np_arr[:,:,0])
+                    dst.write_band(_id, np_arr[:, :, 0])
     return new_rpath
