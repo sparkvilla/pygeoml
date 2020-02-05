@@ -178,8 +178,6 @@ class Raster:
         if fbar:
             fig.colorbar(img, ax=ax)
 
-    def write_arr(self, arr):
-        pass
 
     def mask_arr(self, arr, mask, write=False, outdir=None):
         """
@@ -467,44 +465,13 @@ class Rastermsp(Raster):
             meta = src0.meta
             # Update  metadata to reflect the number of layers
             meta.update(count = len(rfiles))
+            meta.update(driver = 'GTiff')
         stack_fname = 'multibands'
         if mask is not None:
             stack_fname = 'multibands_masked'
         stack_path = stack_to_disk(rfiles, stack_fname, meta, outdir, mask)
         return Rastermsp(stack_path)
 
-
-    @classmethod
-    def points_on_layer_plot(self, r_obj, arr, gdf, **kwargs):
-
-        layer_arr = arr[:,:,0]
-        layer_endrow = layer_arr.shape[0]
-        layer_endcol = layer_arr.shape[1]
-        layer_poly = [r_obj.transform_to_coordinates(0,0), r_obj.transform_to_coordinates(layer_endrow,0),
-                      r_obj.transform_to_coordinates(layer_endrow,layer_endcol), r_obj.transform_to_coordinates(0,layer_endcol)]
-
-        # check for raster and arr coordinates
-        assert r_obj.get_raster_polygon() == Polygon(layer_poly), "Input array and raster must have same coordinates"
-
-        cmap, marker, markersize, color, label = kwargs.get('r_cmap',"pink"), \
-                                  kwargs.get('s_marker',"s"), \
-                                  kwargs.get('s_markersize',30), \
-                                  kwargs.get('s_color',"purple"), \
-                                  kwargs.get('s_label',"classname")
-
-        # Plotting
-        fig, ax = plt.subplots(figsize=(10, 10))
-
-        ax.imshow(layer_arr[:,:,0],
-                      # Set the spatial extent or else the data will not line up with your geopandas layer
-                      extent=plotting_extent(r_obj),
-                      cmap=cmap)
-        gdf.plot(ax=ax,
-                     marker=marker,
-                     markersize=markersize,
-                     color=color,
-                     label=label)
-        return ax
 
     def show_hist(self):
         with rasterio.open(self.path_to_raster) as dataset:

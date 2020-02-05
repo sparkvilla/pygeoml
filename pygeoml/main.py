@@ -3,6 +3,7 @@ import numpy as np
 import os
 import glob
 import copy
+import csv
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import cross_val_score
 
@@ -37,6 +38,14 @@ class_to_int_map = [(b'Agricult', 1),
                     (b'Tree_pla', 10),
                     (b'masked', 11)]
 
+def _to_csv(fpath, ci_map, n_est, acc):
+    with open(fpath, 'w') as out:
+        csv_out=csv.writer(out)
+        csv_out.writerow(['class','num'])
+        for row in data:
+            csv_out.writerow(row)
+        csv_out.writerow(['n_estimators','accuracy'])
+        csv_out.writerow([n_est, acc])
 
 def str_class_to_int(class_array):
     # Transform string class in integer class
@@ -51,7 +60,7 @@ def str_class_to_int(class_array):
     class_array[class_array == class_to_int_map[8][0]] = class_to_int_map[8][1]
     class_array[class_array == class_to_int_map[9][0]] = class_to_int_map[9][1]
     class_array[class_array == class_to_int_map[10][0]] = class_to_int_map[10][1]
-    return(class_array.astype(int))
+    return(class_array.astype('uint8'))
 
 
 def step1(dir10, dir20, fpath_scl, outdir):
@@ -95,7 +104,7 @@ def step2(dirshp, outdir):
 
 def step3(outdir):
     """
-    Use k-fold cross validation to get the best n_estimator param
+    Use k-fold cross validation to get the best n_estimator param based on accuracy
     """
     train = Trainingdata.load_xy(os.path.join(outdir,'multibands_masked_features.npy'), os.path.join(outdir,'multibands_masked_lables.npy'))
 
@@ -116,7 +125,7 @@ def step3(outdir):
 
     best_estimator = n_est_range[idx_max]
     logger.info('Best estimator: {}'.format(best_estimator) )
-    return best_estimator
+    return best_estimator, best_score
 
 def step4(outdir, n_estimator):
     """
@@ -140,16 +149,22 @@ def step5(outdir):
     stack = Rastermsp(stackdir)
     new_meta = stack.meta
     new_meta.update(count = 1)
+    new_meta.update(dtype = 'uint8')
+    new_meta.update(driver = 'GTiff')
 
     class_prediction = np.load(os.path.join(outdir,'multibands_masked_class_prediction.npy'))
     class_prediction = str_class_to_int(class_prediction)
 
-    raster_to_disk(class_prediction, 'raster_map', new_meta, outdir, class_to_int_map)
+    # add a third axes (channel) to the np array 
+    class_prediction = np.expand_dims(class_prediction, axis=2)
+    logger.info('class prediction int'.format(np.unique(class_prediction)))
+    raster_to_disk(class_prediction, 'scene_classification', new_meta, outdir)
+    
+    # add map file
+    #fpath = os.path.join(outdir, 'scene_classification_map.csv')
+    #_to_csv(fpath, class_to_int_map)
 
 def plot_class_prediction(outdir):
-    class_prediction = np.load(os.path.join(outdir,'multibands_masked_class_prediction.npy'))
-
-    class_prediction = str_class_to_int(class_prediction)
 
     # find the highest pixel value in the prediction image
     n = int(np.max(class_prediction))

@@ -7,7 +7,8 @@ from rasterio.plot import reshape_as_raster, reshape_as_image
 
 def mask_and_fill(arr, mask, fill_value=0):
     """
-    Mask an array using a mask array.
+    Mask an array using a mask array and fill it with
+    a fill value.
 
     *********
 
@@ -18,10 +19,9 @@ def mask_and_fill(arr, mask, fill_value=0):
     return:
         masked_arr_filled -> masked 3D numpy array
     """
-    # Get the number of bands
-    bands = arr.shape[2]
-    # Match mask with array dimensions
-    mask = np.repeat(mask, bands, axis=2)
+    # check arr and mask have the same dim
+    assert (arr.shape == mask.shape),\
+        "Array and mask must have the same dimensions!"
     masked_arr = np.ma.array(arr, mask=mask)
 
     # Fill masked vales with zero !! maybe to be changed
@@ -60,41 +60,37 @@ def np_to_disk(np_array, np_fname, rpath, outdir=None):
     return np_path
 
 
-def raster_to_disk(np_array, new_rname, new_rmeta, outdir, desc=None,
-                   p_rpath=None):
+def raster_to_disk(np_array, new_rname, new_rmeta, outdir, p_rpath=None):
     """
     Save a numpy array as geo-raster to disk
-
-    'desc' param can be used to encode additional information;
-           e.g.in case of a classification map -> int:'classname'
 
     'p_rpath' param uses a second raster filename as prefix
 
     *********
 
     params:
-        np_array -> numpy array to save as raster
+        np_array ->  3D numpy array to save as raster
         new_rname -> name for the new raster
         new_rmeta -> metadata for the new raster
         outdir -> output directory
-        desc -> list of tuples [(1, classname1), (2, classname2), ...]
         p_rpath -> full path of the original raster
 
     return:
         new_rpath -> full path of the new raster
 
     """
-    name = '_' + new_rname + '.gtif'
+    assert (new_rmeta['driver'] == 'GTiff'),\
+        "Please use GTiff driver to write to disk. \
+    Passed {} instead.".format(new_rmeta['driver'])
+
+    name = new_rname + '.gtif'
     new_rpath = os.path.join(outdir, name)
 
     if p_rpath:
         prefix = os.path.splitext(os.path.basename(p_rpath))[0]
-        new_rpath = os.path.join(outdir, prefix + name)
+        new_rpath = os.path.join(outdir, prefix + '_' + name)
 
     with rasterio.open(new_rpath, 'w', **new_rmeta) as dst:
-        if desc:
-            # Switch on description for the new raster
-            dst.descriptions = desc
         dst.write(reshape_as_raster(np_array))
     return new_rpath
 
@@ -113,6 +109,10 @@ def stack_to_disk(rfiles, new_rname, new_rmeta, outdir, mask=None):
         mask -> 3D boolean masked array
 
     """
+    assert (new_rmeta['driver'] == 'GTiff'),\
+        "Please use GTiff driver to write to disk. \
+    Passed {} instead.".format(new_rmeta['driver'])
+
     name = new_rname + '.gtif'
     new_rpath = os.path.join(outdir, name)
     with rasterio.open(new_rpath, 'w', **new_rmeta) as dst:
