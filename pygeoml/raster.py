@@ -1,5 +1,6 @@
 import os
 import copy
+import sys
 import rasterio
 import rasterio.plot
 from rasterio.plot import reshape_as_image, reshape_as_raster, plotting_extent
@@ -14,6 +15,21 @@ import matplotlib.pyplot as plt
 from shapely.geometry import Polygon
 
 from pygeoml.utils import raster_to_disk, mask_and_fill, stack_to_disk
+import logging
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+formatter = logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s')
+
+file_handler = logging.FileHandler('../../pygeoml.log')
+file_handler.setFormatter(formatter)
+
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setFormatter(formatter)
+
+logger.addHandler(file_handler)
+logger.addHandler(console_handler)
 
 
 class Raster:
@@ -277,7 +293,7 @@ class Raster:
         return ax
 
     @classmethod
-    def calc_ndvi(cls, red_obj, nir_obj, write=False):
+    def calc_ndvi(cls, red_obj, nir_obj, outdir):
         """
         Return a calculated ndvi 3D numpy array. The axis of the array have the order:
 
@@ -292,22 +308,22 @@ class Raster:
         When write=True the ndvi is saved to disk as ndvi.gtif
 
         """
+        logger.debug('Calculate ndvi with red: {} and nir: {}'.format(red_obj, nir_obj))
         red_arr = red_obj.load_as_arr()[:,:,0]
         nir_arr = nir_obj.load_as_arr()[:,:,0]
 
         np.seterr(divide='ignore', invalid='ignore')
-        ndvi_arr = (nir_arr.astype(float)-red_arr.astype(float))/(nir_arr.astype(float)+red_arr.astype(float))
+        ndvi_arr = (nir_arr.astype(np.float32)-red_arr.astype(np.float32))/(nir_arr.astype(np.float32)+red_arr.astype(np.float32))
 
-        # write to disk
-        if write:
-            # grab and copy metadata of one of the two array
-            ndvi_meta = copy.deepcopy(red_obj.meta)
-            ndvi_meta.update(count=1, dtype="float64", driver='GTiff')
-            ndvi_path = os.path.dirname(red_obj.path_to_raster)
-            with rasterio.open(os.path.join(ndvi_path,'ndvi.gtif'), 'w', **ndvi_meta) as dst:
-                dst.descriptions = ['ndvi']
-                dst.write(ndvi_arr, 1)
-        return ndvi_arr
+        # add a third axes (channel) to the np array
+        ndvi_arr = np.expand_dims(ndvi_arr, axis=2)
+        # grab and copy metadata of one of the two array
+        ndvi_meta = copy.deepcopy(red_obj.meta)
+        ndvi_meta.update(count=1, dtype="float32", driver='GTiff')
+
+        rpath = raster_to_disk(ndvi_arr, 'ndvi', ndvi_meta, outdir)
+
+        return Raster(rpath)
 
     @classmethod
     def georeference_raster(cls, r_obj, epsg, ulc_easting, ulc_northing, cell_width, cell_nheight, rotation=0, outdir=None):
@@ -381,7 +397,7 @@ class Raster:
             np_arr = reshape_as_image(r_arr)
 
         rpath = raster_to_disk(np_arr, 'resampled', new_meta,
-                       r_obj.path_to_raster, outdir)
+                        outdir)
 
         return Raster(rpath)
 
@@ -445,7 +461,7 @@ class Rastermsp(Raster):
         assert self.count > 1, '"Rastermsp" class process multibands raster only, your raster has a single band. Try to use the "Raster" class instead.'
 
     @classmethod
-    def create_stack(cls, rfiles, outdir, mask=None):
+    def create_stack(cls, rfiles, outdir, dtype=None, mask=None):
         """
         Create a stack of rasters
 
@@ -466,6 +482,8 @@ class Rastermsp(Raster):
             # Update  metadata to reflect the number of layers
             meta.update(count = len(rfiles))
             meta.update(driver = 'GTiff')
+            if dtype:
+                meta.update(dtype = dtype)
         stack_fname = 'multibands'
         if mask is not None:
             stack_fname = 'multibands_masked'

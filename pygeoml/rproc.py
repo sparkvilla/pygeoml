@@ -15,71 +15,9 @@ import numpy as np
 
 from raster import Rasterhsp
 
-# Not working properly
-
-class Rproc:
-
-    def __init__(self, path_to_raster=None, outdir=None):
-
-        self.path_to_raster = path_to_raster
-        self.outdir = outdir
-        self.memfile = MemoryFile()
-
-        with rasterio.open(path_to_raster) as dataset:
-            self.driver = dataset.driver
-            self.count = dataset.count
-            self.desc = dataset.descriptions
-            self.crs = dataset.crs
-            self.meta = dataset.meta
-            self.height = dataset.height
-            self.width = dataset.width
-            self.transform = dataset.transform
-            self.bounds = dataset.bounds
-
-    def load_in_memory(self):
-        with rasterio.open(self.path_to_raster) as src:
-            # make a copy of the raster data and metadata in memory
-            data = self.memfile.open(**src.profile)
-            data.write(src.read(out_shape=(src.count, src.height, src.width)))
-            data.close()
-
-    def save_raster(self):
-        pass
-
-    def georeference(self, epsg, ulc_easting, ulc_northing, cell_width, cell_nheight, rotation=0):
-        """
-        Uses a scene classification file (20m or 60m resolution) to build a mask array
-
-        ************
-
-        args:
-            filepath -- Full path to scf file
-        """
-
-        # Build transform and crs attributes
-        transform = Affine(cell_width, rotation, ulc_easting, rotation, cell_nheight, ulc_northing)
-        crs = CRS.from_epsg(epsg)
-
-        # change metadata
-        metadata = self.meta
-        metadata.update(transform=transform, driver='GTiff', crs=crs)
-
-        # update metadata in memory
-        update_data = self.memfile.open('w', **metadata)
-        update_data.write()
-        update_data.close()
 
 
 
-def get_ds(path):
-    with rasterio.open(path) as data_orig:
-        print(repr(data_orig))
-        memfile = MemoryFile()
-        metadata = data_orig.meta
-        data_proc = memfile.open(**metadata)
-        print(repr(data_proc))
-        data_proc.write(data_orig)
-    return data_proc
 
 
 

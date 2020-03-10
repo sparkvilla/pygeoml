@@ -56,8 +56,9 @@ class Shapeobj():
         # This will change gdf in place
         self.gdf = self.gdf.to_crs({'init':ref})
 
-    def write_gdf(self, outdir=None):
-        fname = os.path.basename(self.path).split('.')[0]+'_dataframe'
+    def write_gdf(self, fname=None, outdir=None):
+        if not fname:
+            fname = os.path.basename(self.path).split('.')[0]+'_dataframe'
         if not outdir:
             # set outdir as the input raster location
             outdir = os.path.dirname(self.path)
