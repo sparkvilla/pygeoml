@@ -97,6 +97,35 @@ Passed np_array of dimension {} instead.".format(np_array.ndim)
         dst.write(reshape_as_raster(np_array))
     return new_rpath
 
+def aoi_xy_to_disk(rpath_orig, rname, window, outdir):
+    """
+    Writes an area of interest (aoi) to disk
+    *********
+
+    params:
+        rpath ->  Full path to original raster
+        window -> rasterio.windows.Window
+        rnam -> name aoi the aoi to write to disk
+        outdir -> output directory
+
+    return:
+        new_rpath -> full path of the new raster
+    """
+    name = rname + '.tif'
+    new_rpath = os.path.join(outdir, name)
+
+    with rasterio.open(rpath_orig) as src:
+        new_meta = src.meta.copy()
+        new_meta.update({
+            'driver': 'GTiff',
+            'height': window.height,
+            'width': window.width,
+            'transform': rasterio.windows.transform(window, src.transform)})
+
+        with rasterio.open(new_rpath, 'w', **new_meta) as dst:
+            dst.write(src.read(window=window))
+    return os.path.abspath(new_rpath)
+
 
 def stack_to_disk(rfiles, new_rname, new_rmeta, outdir, mask=None):
     """
@@ -116,7 +145,7 @@ def stack_to_disk(rfiles, new_rname, new_rmeta, outdir, mask=None):
         "Please use GTiff driver to write to disk. \
     Passed {} instead.".format(new_rmeta['driver'])
 
-    name = new_rname + '.gtif'
+    name = new_rname + '.tif'
     new_rpath = os.path.join(outdir, name)
     with rasterio.open(new_rpath, 'w', **new_rmeta) as dst:
         for _id, fl in enumerate(rfiles, start=1):
@@ -306,10 +335,10 @@ if __name__ == "__main__":
 
     basedir = '/home/diego/work/dev/imgs/for_mosaic'
 
-    search_criteria = "*.tif"
+    #search_criteria = "*.tif"
     # output base directory
-    fl = os.path.join(basedir, search_criteria)
+    #fl = os.path.join(basedir, search_criteria)
 
-    import glob
-    rf = glob.glob(fl)
-    mosaic_to_disk(rf, 'mosaic', basedir)
+    #import glob
+    #rf = glob.glob(fl)
+    #mosaic_to_disk(rf, 'mosaic', basedir)
