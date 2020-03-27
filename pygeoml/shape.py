@@ -6,9 +6,10 @@ import geopandas as gpd
 gpd.io.file.fiona.drvsupport.supported_drivers['KML'] = 'rw'
 
 
-
-
 class Shapeobj():
+    """
+    (to be changed)
+    """
     """
 
     Build ShapeObj from a shapefile.
@@ -96,37 +97,3 @@ class Shapeobj():
         Update gdf attribute by replacing a classname field
         """
         self.gdf.replace(name, new_name, inplace=True)
-
-# assign value to a column based of values of other column
-
-
-#set(new_gdf['classname']) =
-#{'Agriculture',
-#  'Agricutlure',
-#  'Bare rock',
-#  'Building',
-#  'Farm',
-#  'Forest',
-#  'Livestock',
-#  'Marsh',
-#  'River',
-#  'Road',
-#  'Tree plantation'}
-#
-#ids=
-#[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
-#
-#for classname,i in zip(set(new_gdf['classname']),ids):
-#        new_gdf.loc[new_gdf['classname'] == classname, 'id'] = i
-#
-#non_charcol_obj.crs
-#
-#type(non_charcol_obj)
-#
-#new_gdf = non_charcol_obj.rename(columns = {'Name':'classname'})
-#
-#new_gdf[new_gdf['classname']=='Builidng'] = 'Building'
-#
-#new_gdf[new_gdf['classname']=='Builiding'] = 'Building'
-#
-#set(new_gdf['classname'])

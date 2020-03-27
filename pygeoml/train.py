@@ -21,17 +21,6 @@ import pdb
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
-formatter = logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s')
-
-file_handler = logging.FileHandler('../../pygeoml.log')
-file_handler.setFormatter(formatter)
-
-console_handler = logging.StreamHandler(sys.stdout)
-console_handler.setFormatter(formatter)
-
-logger.addHandler(file_handler)
-logger.addHandler(console_handler)
-
 
 class Trainingdata:
     """
@@ -134,6 +123,7 @@ class Trainingdata:
         Use k-fold cross validation to get the best n_estimator param based on accuracy
         """
         logger.debug('Starting random forest cross validation... ')
+        logger.debug('Cross validation param: {}'.format(cv))
         # Choose the best n_estimator value using k-fold cross validation
         n_est_range = [200, 400, 600, 800, 1000, 1200, 1400, 1600, 1800, 2000]
         n_est_scores = []
@@ -141,6 +131,7 @@ class Trainingdata:
         for n in n_est_range:
             rf = RandomForestClassifier(n_estimators=n, oob_score=True)
             scores = cross_val_score(rf, self.X, self.y, cv=cv, scoring='accuracy')
+            logger.debug('Estimators: {} -> Accuracy: {}'.format(n, scores.mean()))
             n_est_scores.append(scores.mean())
 
         best_score = max(n_est_scores)
@@ -284,9 +275,9 @@ class Trainingdata:
                 # Checks for out_image_reshaped == 0
                 # If equal to zero (masked) it will not be included in the final X,y
                 if np.count_nonzero(out_image_reshaped) == 0:
-                    classname = gdf['classname'].iloc[index]
-                    logger.debug('''Point of class {} at dataframe index {},
-                                  not included in the training data because cloud masked'''.format(classname, index))
+                #    classname = gdf['classname'].iloc[index]
+                #    logger.debug('''Point of class {} at dataframe index {},
+                #                  not included in the training data because cloud masked'''.format(classname, index))
                     continue
                 y = np.append(y,[gdf['id'][index]] * out_image_reshaped.shape[0])
                 X = np.vstack((X,out_image_reshaped))
@@ -300,28 +291,3 @@ class Trainingdata:
             json_to_disk(json_arr, 'training_data', outdir)
 
         return Trainingdata(X, y, map_cl_id)
-
-
-
-
-if __name__ == '__main__':
-    from pygeoml.raster import Raster
-    from pygeoml.shape import Shapeobj
-
-    basedir = '/home/diego/work/dev/ess_diego/Data_Diego/Hanneke/outdata/'
-    pointspath = os.path.join(basedir, 'all_points/all_points.shp')
-    outdir = os.path.join(basedir,'output/S2A_MSIL2A_20190906T073611_N0213_R092_T37MBN_20190906T110000.SAFE_out')
-
-    #stack = Raster(os.path.join(outdir, 'multibands_masked.gtif'))
-    #pt = Shapeobj(pointspath)
-    #train = Trainingdata.calc_xy(stack, pt.gdf, True, outdir)
-
-    #train.add_class('masked', 0)
-    #print(train.map_cl_id)
-    #train.save(outdir)
-    t_new = Trainingdata.load(os.path.join(outdir,  'training_data.json'))
-    print(t_new.map_cl_id)
-    print(t_new.label_ids, t_new.label_ids_count)
-    t_new.exclude_classes(130)
-    print(t_new.map_cl_id)
-    print(t_new.label_ids, t_new.label_ids_count)
