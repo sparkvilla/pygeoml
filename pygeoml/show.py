@@ -2,7 +2,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import rasterio
 
-def plot_select_class_prediction(class_prediction, color_map, classes, figsize=(10,10), fontsize=8, r_obj=None):
+def plot_select_class_prediction(class_prediction, color_map, classes,
+                                 figsize=(10,10), fontsize=8, r_obj=None,
+                                 save=False, path=None):
 
     # find the highest pixel value in the prediction image
     n = int(np.max(class_prediction[:,:,0]))
@@ -44,6 +46,8 @@ def plot_select_class_prediction(class_prediction, color_map, classes, figsize=(
               fontsize=fontsize)  # Place legend to the RIGHT of the map
     axs.set_axis_off()
     plt.show()
+    if save and path:
+        fig.savefig(path, bbox_inches='tight')
 
     def show_hist(path_to_raster):
         """
